@@ -1799,7 +1799,7 @@ export default function Orders() {
                     <button
                       type="button"
                       onClick={handleAddItem}
-                      className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors font-semibold flex items-center gap-2"
+                      className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-all font-bold flex items-center gap-2 shadow-md hover:shadow-lg"
                     >
                       <Plus size={18} />
                       Add New Item
@@ -1934,7 +1934,7 @@ export default function Orders() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveItem(itemIndex)}
-                                className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-semibold"
+                                className="w-full px-4 py-2 bg-red-100 text-red-700 border-2 border-red-300 rounded-lg hover:bg-red-200 hover:border-red-400 transition-colors font-semibold"
                               >
                                 <X size={18} className="inline mr-1" />
                                 Remove
@@ -1943,7 +1943,7 @@ export default function Orders() {
                           </div>
 
                           {/* Processes Section - Expandable */}
-                          <div className="border-t border-gray-200 pt-4">
+                          <div className="border-t-2 border-gray-300 pt-4 mt-4">
                             <button
                               type="button"
                               onClick={() => {
@@ -1955,16 +1955,19 @@ export default function Orders() {
                                 }
                                 setExpandedItems(newExpanded);
                               }}
-                              className="w-full flex items-center justify-between text-sm font-semibold text-gray-700 hover:text-gray-900 mb-2"
+                              className="w-full flex items-center justify-between text-sm font-bold text-gray-800 hover:text-green-600 mb-3 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
                             >
-                              <span>Processes ({item.processes.length})</span>
+                              <span className="flex items-center gap-2">
+                                <Package size={16} />
+                                Processes ({item.processes.length})
+                              </span>
                               {expandedItems.has(itemIndex) ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                             </button>
 
                             {expandedItems.has(itemIndex) && (
                               <div className="space-y-3 mt-3">
                                 {item.processes.map((process, processIndex) => (
-                                  <div key={processIndex} className="grid grid-cols-12 gap-4 items-center bg-gray-50 p-3 rounded-lg">
+                                  <div key={processIndex} className="grid grid-cols-12 gap-4 items-center bg-white border border-gray-300 p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow">
                                     <div className="col-span-12 md:col-span-4">
                                       <label className="block text-xs font-semibold text-gray-700 mb-1">Process Name</label>
                                       <div className="relative">
@@ -2051,7 +2054,7 @@ export default function Orders() {
                                       <button
                                         type="button"
                                         onClick={() => handleRemoveProcess(itemIndex, processIndex)}
-                                        className="w-full px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-semibold"
+                                        className="w-full px-3 py-1 bg-red-50 text-red-600 border border-red-300 rounded-lg hover:bg-red-100 hover:border-red-400 transition-colors text-sm font-semibold"
                                       >
                                         <X size={16} className="inline mr-1" />
                                         Remove
@@ -2062,9 +2065,9 @@ export default function Orders() {
                                 <button
                                   type="button"
                                   onClick={() => handleAddProcess(itemIndex)}
-                                  className="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-semibold flex items-center justify-center gap-2"
+                                  className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
                                 >
-                                  <Plus size={16} />
+                                  <Plus size={18} />
                                   Add Process
                                 </button>
                               </div>

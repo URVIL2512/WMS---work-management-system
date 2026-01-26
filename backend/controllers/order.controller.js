@@ -133,6 +133,11 @@ export const createOrder = async (req, res, next) => {
 
           // Validate processes for this item
           for (const process of item.processes) {
+            // Clean up empty processId (prevent ObjectId cast error)
+            if (process.processId === '' || process.processId === null || process.processId === undefined) {
+              delete process.processId;
+            }
+
             if (!process.processName || process.processName.trim() === '') {
               return res.status(400).json({
                 success: false,
