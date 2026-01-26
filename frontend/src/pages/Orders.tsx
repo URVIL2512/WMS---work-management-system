@@ -1432,10 +1432,13 @@ export default function Orders() {
     }
   };
 
+  // Debug logging
+  console.log('Orders Page Render - showModal:', showModal, 'showEditModal:', showEditModal);
+
   // Main return with conditional rendering
   return (
     <div className="space-y-4 md:space-y-6">
-      {/* Create/Edit Order Form */}
+      {/* Create/Edit Order Form - Only shown when showModal or showEditModal is true */}
       {(showModal || showEditModal) && (
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <form onSubmit={showModal ? handleSubmit : handleUpdateSubmit} className="p-6">
@@ -2262,7 +2265,7 @@ export default function Orders() {
         </div>
       )}
 
-      {/* Orders List View */}
+      {/* Orders List View - Only shown when BOTH showModal AND showEditModal are false */}
       {!showModal && !showEditModal && (
         <>
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
