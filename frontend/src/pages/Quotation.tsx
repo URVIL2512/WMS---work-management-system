@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Plus, Eye, Printer, X, Trash2, Minus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Eye, Printer, X, Trash2, Minus, MoreVertical, Edit } from 'lucide-react';
 import api from '../api/axios';
 import ConfirmationModal from '../components/ConfirmationModal';
 import QuotationForm from '../components/QuotationForm';
@@ -25,6 +26,11 @@ export default function Quotation() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [quotationToDelete, setQuotationToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [quotationToEdit, setQuotationToEdit] = useState<any>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
 
   const [processes, setProcesses] = useState<Array<{ processName: string; rate: string }>>([
     { processName: '', rate: '' }
@@ -115,6 +121,7 @@ export default function Quotation() {
 
   const handleCloseModal = () => {
     setShowModal(false);
+    setQuotationToEdit(null);
     resetForm();
   };
 
@@ -203,6 +210,138 @@ export default function Quotation() {
     }
   };
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+        setDropdownPosition(null);
+      }
+    };
+
+    const handleScroll = () => {
+      // Close dropdown on scroll
+      setOpenMenuId(null);
+      setDropdownPosition(null);
+    };
+
+    const handleResize = () => {
+      // Close dropdown on resize
+      setOpenMenuId(null);
+      setDropdownPosition(null);
+    };
+
+    if (openMenuId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      window.addEventListener('scroll', handleScroll, true);
+      window.addEventListener('resize', handleResize);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [openMenuId]);
+
+  const toggleMenu = (id: string) => {
+    if (openMenuId === id) {
+      setOpenMenuId(null);
+      setDropdownPosition(null);
+      return;
+    }
+
+    const button = buttonRefs.current[id];
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const dropdownHeight = 200; // Approximate height of dropdown menu
+    const dropdownWidth = 192; // w-48 = 12rem = 192px
+    const spacing = 8; // mt-2 = 0.5rem = 8px
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+
+    // Determine if dropdown should open upward
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUpward = spaceBelow < dropdownHeight && spaceAbove > spaceBelow;
+
+    // Calculate top position
+    let top: number;
+    if (openUpward) {
+      top = rect.top - dropdownHeight - spacing;
+      // Ensure it doesn't go above viewport
+      if (top < 10) {
+        top = 10;
+      }
+    } else {
+      top = rect.bottom + spacing;
+      // Ensure it doesn't go below viewport
+      if (top + dropdownHeight > viewportHeight - 10) {
+        top = viewportHeight - dropdownHeight - 10;
+      }
+    }
+
+    // Calculate left position (align to right edge of button)
+    let left = rect.right - dropdownWidth;
+    // Ensure it doesn't go off-screen
+    if (left < 10) {
+      left = 10;
+    }
+    if (left + dropdownWidth > viewportWidth - 10) {
+      left = viewportWidth - dropdownWidth - 10;
+    }
+
+    setDropdownPosition({ top, left, openUpward });
+    setOpenMenuId(id);
+  };
+
+  const handleView = async (quotation: QuotationItem) => {
+    try {
+      const response = await api.get(`/quotations/${quotation._id}`);
+      if (response.data.success) {
+        // For now, just log the data. You can implement a view modal later
+        console.log('Quotation details:', response.data.data);
+        alert(`Viewing quotation: ${quotation.quotationNumber}\nTotal: ₹${quotation.totalAmount}`);
+      }
+    } catch (err: any) {
+      console.error('Error fetching quotation details:', err);
+      setError(err.response?.data?.message || 'Failed to fetch quotation details');
+    }
+    setOpenMenuId(null);
+    setDropdownPosition(null);
+  };
+
+  const handleEdit = async (quotation: QuotationItem) => {
+    try {
+      const response = await api.get(`/quotations/${quotation._id}`);
+      if (response.data.success) {
+        setQuotationToEdit(response.data.data);
+        setShowModal(true);
+      }
+    } catch (err: any) {
+      console.error('Error fetching quotation details:', err);
+      setError(err.response?.data?.message || 'Failed to fetch quotation details');
+    }
+    setOpenMenuId(null);
+    setDropdownPosition(null);
+  };
+
+  const handlePrint = (quotation: QuotationItem) => {
+    // Implement print functionality
+    console.log('Printing quotation:', quotation.quotationNumber);
+    // You can open a print dialog or generate PDF
+    alert(`Print functionality for ${quotation.quotationNumber} - Coming soon!`);
+    setOpenMenuId(null);
+    setDropdownPosition(null);
+  };
+
+  const handleDelete = (quotation: QuotationItem) => {
+    handleDeleteClick(quotation._id);
+    setOpenMenuId(null);
+    setDropdownPosition(null);
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
       {!showModal && (
@@ -213,7 +352,11 @@ export default function Quotation() {
               <p className="text-sm md:text-base text-gray-500 mt-1">Create and manage customer quotations</p>
             </div>
             <button
-              onClick={() => { resetForm(); setShowModal(true); }}
+              onClick={() => { 
+                resetForm(); 
+                setQuotationToEdit(null);
+                setShowModal(true); 
+              }}
               className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg text-sm md:text-base font-semibold transition-colors w-full sm:w-auto"
             >
               <Plus size={20} className="w-4 h-4 md:w-5 md:h-5" />
@@ -221,10 +364,10 @@ export default function Quotation() {
             </button>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="bg-white rounded-lg shadow-md">
         <div className="overflow-x-auto -mx-3 md:mx-0">
           <div className="inline-block min-w-full align-middle px-3 md:px-0">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 relative">
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Quotation No</th>
@@ -275,21 +418,14 @@ export default function Quotation() {
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        <button className="p-2 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="View">
-                          <Eye size={18} />
-                        </button>
-                        <button className="p-2 text-gray-600 hover:bg-gray-50 rounded transition-colors" title="Print">
-                          <Printer size={18} />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteClick(quotation._id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded transition-colors" 
-                          title="Delete"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      <button
+                        ref={(el) => { buttonRefs.current[quotation._id] = el; }}
+                        onClick={() => toggleMenu(quotation._id)}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="More actions"
+                      >
+                        <MoreVertical size={18} className="text-gray-600" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -310,8 +446,66 @@ export default function Quotation() {
               fetchQuotations();
               handleCloseModal();
             }}
+            quotationToEdit={quotationToEdit}
           />
         </div>
+      )}
+
+      {/* Dropdown Menu Portal */}
+      {openMenuId && dropdownPosition && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[10000]"
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+          }}
+        >
+          <div className="py-1">
+            <button
+              onClick={() => {
+                const quotation = quotations.find(q => q._id === openMenuId);
+                if (quotation) handleView(quotation);
+              }}
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2 transition-colors"
+            >
+              <Eye size={16} className="text-blue-600 flex-shrink-0" />
+              <span>View Details</span>
+            </button>
+            <button
+              onClick={() => {
+                const quotation = quotations.find(q => q._id === openMenuId);
+                if (quotation) handleEdit(quotation);
+              }}
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
+            >
+              <Edit size={16} className="text-green-600 flex-shrink-0" />
+              <span>Edit</span>
+            </button>
+            <button
+              onClick={() => {
+                const quotation = quotations.find(q => q._id === openMenuId);
+                if (quotation) handlePrint(quotation);
+              }}
+              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+            >
+              <Printer size={16} className="text-gray-600 flex-shrink-0" />
+              <span>Print</span>
+            </button>
+            <div className="border-t border-gray-200 my-1"></div>
+            <button
+              onClick={() => {
+                const quotation = quotations.find(q => q._id === openMenuId);
+                if (quotation) handleDelete(quotation);
+              }}
+              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+            >
+              <Trash2 size={16} className="flex-shrink-0" />
+              <span>Delete</span>
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
 
       <ConfirmationModal
