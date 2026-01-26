@@ -1432,9 +1432,6 @@ export default function Orders() {
     }
   };
 
-  // Debug logging
-  console.log('Orders Page Render - showModal:', showModal, 'showEditModal:', showEditModal);
-
   // Main return with conditional rendering
   return (
     <div className="space-y-4 md:space-y-6">
@@ -2523,257 +2520,8 @@ export default function Orders() {
           </div>
         </div>
       </div>
-              <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">Order Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Sales Order No</label>
-                    <input
-                      type="text"
-                      value={soNumber}
-                      onChange={(e) => setSoNumber(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                      placeholder="Enter Sales Order No"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Order Date</label>
-                    <input
-                      type="text"
-                      value={new Date().toLocaleDateString()}
-                      readOnly
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Quotation No</label>
-                    <input
-                      type="text"
-                      value={selectedQuotationData?.quotationNumber || ''}
-                      readOnly
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* QUOTATION SELECTION */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Select Approved Quotation <span className="text-gray-500 text-xs">(Optional - Leave blank to create order manually)</span>
-                </label>
-                <select
-                  value={formData.quotationId}
-                  onChange={(e) => handleQuotationSelect(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  <option value="">-- Select Approved Quotation (Optional) --</option>
-                  {approvedQuotations.map((quotation) => (
-                    <option key={quotation._id} value={quotation._id}>
-                      {quotation.quotationNumber} - {quotation.partyName}
-                    </option>
-                  ))}
-                </select>
-                {approvedQuotations.length === 0 && !formData.quotationId && (
-                  <p className="text-sm text-gray-500 mt-1">No approved quotations available. You can create order manually below.</p>
-                )}
-              </div>
-
-              {/* CUSTOMER SECTION - From Quotation */}
-              {selectedQuotationData && (
-                <>
-                  <div className="bg-blue-50 p-4 rounded-lg space-y-3">
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">Customer Information</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Customer Name</label>
-                        <input
-                          type="text"
-                          value={selectedQuotationData.partyName || ''}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Contact Number</label>
-                        <input
-                          type="text"
-                          value={selectedQuotationData.contactNumber || ''}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ITEM SECTION */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">Item & Pricing</h3>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Process</th>
-                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Description</th>
-                            <th className="px-4 py-2 text-right text-xs font-semibold text-gray-700">Rate (₹)</th>
-                            <th className="px-4 py-2 text-right text-xs font-semibold text-gray-700">Amount (₹)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {selectedQuotationData.processes && selectedQuotationData.processes.length > 0 ? (
-                            selectedQuotationData.processes.map((process: any, index: number) => {
-                              const quantity = process.quantity || 1;
-                              const rate = process.rate || 0;
-                              const amount = rate * quantity;
-                              return (
-                                <tr key={index}>
-                                  <td className="px-4 py-2 text-sm text-gray-900 font-medium">{process.processName || 'N/A'}</td>
-                                  <td className="px-4 py-2 text-sm text-gray-700">{process.description || '-'}</td>
-                                  <td className="px-4 py-2 text-sm text-gray-900 text-right">{rate.toLocaleString() || '0'}</td>
-                                  <td className="px-4 py-2 text-sm font-semibold text-gray-900 text-right">{amount.toLocaleString() || '0'}</td>
-                                </tr>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={4} className="px-4 py-2 text-sm text-gray-500 text-center">No processes found</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* TOTAL SECTION */}
-                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                    <h3 className="text-lg font-bold text-gray-900 mb-3">Total Summary</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Sub Total</label>
-                        <input
-                          type="text"
-                          value={`₹${(() => {
-                            const processesTotal = selectedQuotationData.processes?.reduce((sum: number, p: any) => sum + (p.rate || 0), 0) || 0;
-                            return processesTotal.toLocaleString();
-                          })()}`}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">GST ({selectedQuotationData.gstPercent || 0}%)</label>
-                        <input
-                          type="text"
-                          value={`₹${((selectedQuotationData.totalAmount * (selectedQuotationData.gstPercent || 0)) / 100).toLocaleString()}`}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Packaging Cost</label>
-                        <input
-                          type="text"
-                          value={`₹${(selectedQuotationData.packagingCost || 0).toLocaleString()}`}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Transport Cost</label>
-                        <input
-                          type="text"
-                          value={`₹${(selectedQuotationData.transportCost || 0).toLocaleString()}`}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-sm font-semibold text-gray-900 mb-1">Final Total</label>
-                        <input
-                          type="text"
-                          value={`₹${(selectedQuotationData.totalAmount || 0).toLocaleString()}`}
-                          readOnly
-                          className="w-full px-4 py-2 border-2 border-green-500 rounded-lg bg-green-50 text-green-900 font-bold text-lg cursor-not-allowed"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Payment Terms</label>
-                        <input
-                          type="text"
-                          value={selectedQuotationData.paymentTerms || 'N/A'}
-                          readOnly
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-600 cursor-not-allowed"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-              
-              {/* DELIVERY SECTION */}
-              <div className="bg-yellow-50 p-4 rounded-lg space-y-3">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">Delivery Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Delivery Date <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.deliveryDate}
-                      onChange={(e) =>
-                        setFormData({ ...formData, deliveryDate: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Expected Dispatch Date
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.expectedDispatchDate}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          expectedDispatchDate: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Delivery Address
-                  </label>
-                  <textarea
-                    value={formData.deliveryAddress}
-                    onChange={(e) =>
-                      setFormData({ ...formData, deliveryAddress: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    rows={3}
-                    placeholder="Enter delivery address"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Remarks
-                  </label>
-                  <textarea
-                    value={formData.remarks}
-                    onChange={(e) =>
-                      setFormData({ ...formData, remarks: e.target.value })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    rows={3}
-                    placeholder="Additional remarks or notes"
-                  />
-                </div>
-              </div>
+        </>
+      )}
 
       {/* View Order Modal */}
       {showViewModal && selectedOrder && (
@@ -2841,88 +2589,7 @@ export default function Orders() {
         </div>
       )}
 
-      {/* Edit Order Modal */}
-      {showEditModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center p-6 border-b">
-              <h2 className="text-2xl font-bold text-gray-900">Edit Order</h2>
-              <button onClick={() => { setShowEditModal(false); setSelectedOrder(null); }} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            <form onSubmit={handleUpdateSubmit} className="p-6 space-y-6">
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                  <div className="font-semibold mb-1">⚠️ Error</div>
-                  <div className="text-sm">{error}</div>
-                </div>
-              )}
-
-              {/* DELIVERY SECTION - Editable */}
-              <div className="bg-yellow-50 p-4 rounded-lg space-y-3">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">Delivery Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Delivery Date</label>
-                    <input
-                      type="date"
-                      value={formData.deliveryDate}
-                      onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Expected Dispatch Date</label>
-                    <input
-                      type="date"
-                      value={formData.expectedDispatchDate}
-                      onChange={(e) => setFormData({ ...formData, expectedDispatchDate: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Delivery Address</label>
-                  <textarea
-                    value={formData.deliveryAddress}
-                    onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    rows={3}
-                    placeholder="Enter delivery address"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Remarks</label>
-                  <textarea
-                    value={formData.remarks}
-                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                    rows={3}
-                    placeholder="Additional remarks or notes"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-4 pt-4">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Updating...' : 'Update Order'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowEditModal(false); setSelectedOrder(null); }}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Edit Order Modal - PLACEHOLDER - Currently using form conditional */}
 
       {/* Delete Confirmation Modal */}
       <ConfirmationModal
@@ -2993,14 +2660,14 @@ export default function Orders() {
             </p>
             <div className="mb-4">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Reason <span className="text-red-500">*</span>
+                Cancellation Reason <span className="text-red-500">*</span>
               </label>
               <textarea
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 rows={4}
-                placeholder="Enter reason for cancelling order..."
+                placeholder="Enter reason for canceling order..."
               />
             </div>
             <div className="flex gap-3">
@@ -3019,7 +2686,7 @@ export default function Orders() {
                 }}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 rounded-lg transition-colors"
               >
-                Back
+                Close
               </button>
             </div>
           </div>
@@ -3034,57 +2701,59 @@ export default function Orders() {
             <p className="text-sm text-gray-600 mb-4">
               Order: <strong>{orderForAction.soNumber}</strong> - {orderForAction.customerName}
             </p>
-            <div className="space-y-4">
+            <div className="space-y-3 mb-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Vehicle Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={dispatchInfo.vehicleNumber}
                   onChange={(e) => setDispatchInfo({ ...dispatchInfo, vehicleNumber: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="e.g., GJ-01-AB-1234"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="e.g., GJ01AB1234"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
                   LR Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={dispatchInfo.lrNumber}
                   onChange={(e) => setDispatchInfo({ ...dispatchInfo, lrNumber: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="LR Number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Lorry Receipt Number"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Driver Name <span className="text-red-500">*</span>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Driver Name
                 </label>
                 <input
                   type="text"
                   value={dispatchInfo.driverName}
                   onChange={(e) => setDispatchInfo({ ...dispatchInfo, driverName: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="Driver Name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Driver's Name"
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Dispatch Date</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  Dispatch Date <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="date"
                   value={dispatchInfo.dispatchDate}
                   onChange={(e) => setDispatchInfo({ ...dispatchInfo, dispatchDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3">
               <button
                 onClick={handleDispatchOrder}
-                disabled={actionLoading || !dispatchInfo.vehicleNumber || !dispatchInfo.lrNumber || !dispatchInfo.driverName}
+                disabled={actionLoading || !dispatchInfo.vehicleNumber || !dispatchInfo.lrNumber || !dispatchInfo.dispatchDate}
                 className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {actionLoading ? 'Processing...' : 'Dispatch Order'}
@@ -3102,8 +2771,6 @@ export default function Orders() {
             </div>
           </div>
         </div>
-      )}
-        </>
       )}
     </div>
   );
