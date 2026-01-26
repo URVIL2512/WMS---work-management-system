@@ -9,6 +9,7 @@ import {
   approveQuotation,
   rejectQuotation,
   requestChangesQuotation,
+  updateQuotationStatus,
   getNextQuotationNumber
 } from '../controllers/quotation.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
@@ -37,6 +38,9 @@ router.route('/:id/reject')
 
 router.route('/:id/request-changes')
   .put(requestChangesQuotation);
+
+router.route('/:id/status')
+  .patch(updateQuotationStatus);
 
 router.route('/:id')
   .get(getQuotation)

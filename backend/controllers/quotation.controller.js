@@ -683,7 +683,7 @@ export const createQuotation = async (req, res, next) => {
 
     // Determine status - allow manual status setting or default to Draft
     let status = 'Draft';
-    if (req.body.status && ['Draft', 'Sent', 'Approved', 'Rejected', 'Request Changes'].includes(req.body.status)) {
+    if (req.body.status && ['Draft', 'Sent', 'Approved', 'Rejected', 'Request Changes', 'Changes Required'].includes(req.body.status)) {
       status = req.body.status;
       console.log('📝 [CREATE] Setting status to:', status);
     }
@@ -761,7 +761,7 @@ export const getQuotations = async (req, res, next) => {
     let filter = {};
     
     // Valid status enum values (must match model exactly)
-    const validStatuses = ['Draft', 'Sent', 'Approved', 'Rejected', 'Request Changes', 'Converted'];
+    const validStatuses = ['Draft', 'Sent', 'Approved', 'Rejected', 'Request Changes', 'Changes Required', 'Converted'];
     
     // Status filter - MUST be applied first with EXACT match
     if (status && status !== 'all' && validStatuses.includes(status)) {
@@ -1376,6 +1376,75 @@ export const requestChangesQuotation = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Changes requested for quotation successfully',
+      data: quotation
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update quotation status (generic status change endpoint)
+// @route   PATCH /api/quotations/:id/status
+// @access  Private
+export const updateQuotationStatus = async (req, res, next) => {
+  try {
+    const { status: newStatus } = req.body;
+
+    if (!newStatus) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+
+    const quotation = await Quotation.findById(req.params.id).populate('createdBy', 'name email');
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quotation not found'
+      });
+    }
+
+    const currentStatus = quotation.status || 'Draft';
+
+    // Define valid status transitions
+    const validTransitions = {
+      'Draft': ['Sent'],
+      'Sent': ['Approved', 'Rejected', 'Changes Required'],
+      'Changes Required': ['Draft', 'Sent'],
+      'Approved': ['Converted'],
+      'Rejected': [],
+      'Converted': []
+    };
+
+    // Normalize status values (handle "Changes Required" vs "Request Changes")
+    const normalizedNewStatus = newStatus === 'Request Changes' ? 'Changes Required' : newStatus;
+
+    // Check if transition is valid
+    const allowedTransitions = validTransitions[currentStatus] || [];
+    if (!allowedTransitions.includes(normalizedNewStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot change status from "${currentStatus}" to "${normalizedNewStatus}". Allowed transitions: ${allowedTransitions.join(', ') || 'None'}`
+      });
+    }
+
+    // Update status
+    quotation.status = normalizedNewStatus;
+    await quotation.save();
+
+    // Log audit
+    await logAudit(req.user._id, 'Update', 'Quotation', quotation._id, {
+      action: `Status changed to ${normalizedNewStatus}`,
+      quotationNumber: quotation.quotationNumber,
+      previousStatus: currentStatus,
+      newStatus: normalizedNewStatus
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Quotation status updated to ${normalizedNewStatus}`,
       data: quotation
     });
   } catch (error) {

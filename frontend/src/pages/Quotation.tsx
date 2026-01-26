@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Eye, Printer, X, Trash2, Minus, MoreVertical, Edit } from 'lucide-react';
+import { Plus, Eye, Printer, X, Trash2, Minus, MoreVertical, Edit, Send, CheckCircle, XCircle, RefreshCw, FileText, AlertCircle } from 'lucide-react';
 import api from '../api/axios';
 import ConfirmationModal from '../components/ConfirmationModal';
 import QuotationForm from '../components/QuotationForm';
@@ -23,6 +23,7 @@ export default function Quotation() {
   const [quotations, setQuotations] = useState<QuotationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [quotationToDelete, setQuotationToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -153,7 +154,8 @@ export default function Quotation() {
         packagingCost: Number(formData.packagingCost) || 0,
         transportCost: Number(formData.transportCost) || 0,
         paymentTerms: formData.paymentTerms,
-        deliveryDate: formData.deliveryDate || undefined
+        deliveryDate: formData.deliveryDate || undefined,
+        status: 'Draft' // Default status for new quotations
       });
 
       if (response.data.success) {
@@ -257,8 +259,8 @@ export default function Quotation() {
     if (!button) return;
 
     const rect = button.getBoundingClientRect();
-    const dropdownHeight = 200; // Approximate height of dropdown menu
-    const dropdownWidth = 192; // w-48 = 12rem = 192px
+    const dropdownHeight = 350; // Approximate height of dropdown menu with status actions
+    const dropdownWidth = 224; // w-56 = 14rem = 224px
     const spacing = 8; // mt-2 = 0.5rem = 8px
     const viewportHeight = window.innerHeight;
     const viewportWidth = window.innerWidth;
@@ -328,11 +330,75 @@ export default function Quotation() {
         return 'bg-green-100 text-green-700 border-green-300';
       case 'rejected':
         return 'bg-red-100 text-red-700 border-red-300';
+      case 'changes required':
+      case 'changes_required':
+        return 'bg-orange-100 text-orange-700 border-orange-300';
       case 'converted':
         return 'bg-purple-100 text-purple-700 border-purple-300';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-300';
     }
+  };
+
+  const handleStatusUpdate = async (quotationId: string, newStatus: string) => {
+    try {
+      setError('');
+      const response = await api.patch(`/quotations/${quotationId}/status`, {
+        status: newStatus
+      });
+      
+      if (response.data.success) {
+        setSuccess(`Quotation status updated to ${newStatus}`);
+        // Clear success message after 3 seconds
+        setTimeout(() => setSuccess(''), 3000);
+        
+        // Refresh quotations list
+        await fetchQuotations();
+        // If viewing details, refresh that too
+        if (showViewDetails && selectedQuotationDetails?._id === quotationId) {
+          const detailsResponse = await api.get(`/quotations/${quotationId}`);
+          if (detailsResponse.data.success) {
+            setSelectedQuotationDetails(detailsResponse.data.data);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Error updating status:', err);
+      setError(err.response?.data?.message || 'Failed to update status');
+    }
+    setOpenMenuId(null);
+    setDropdownPosition(null);
+  };
+
+  const canEditQuotation = (status: string) => {
+    const s = status?.toLowerCase();
+    return s === 'draft' || s === 'changes required' || s === 'changes_required' || !s;
+  };
+
+  const canDeleteQuotation = (status: string) => {
+    const s = status?.toLowerCase();
+    return s !== 'converted';
+  };
+
+  const canConvertToOrder = (status: string) => {
+    return status?.toLowerCase() === 'approved';
+  };
+
+  const canMarkAsSent = (status: string) => {
+    const s = status?.toLowerCase();
+    return s === 'draft' || s === 'changes required' || s === 'changes_required' || !s;
+  };
+
+  const canMarkAsApproved = (status: string) => {
+    return status?.toLowerCase() === 'sent';
+  };
+
+  const canMarkAsRejected = (status: string) => {
+    return status?.toLowerCase() === 'sent';
+  };
+
+  const canRequestChanges = (status: string) => {
+    return status?.toLowerCase() === 'sent';
   };
 
   const handleEdit = async (quotation: QuotationItem) => {
@@ -386,6 +452,34 @@ export default function Quotation() {
               <span>New Quotation</span>
             </button>
           </div>
+
+          {/* Success Message */}
+          {success && (
+            <div className="bg-green-50 border-2 border-green-300 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
+              <span>{success}</span>
+              <button
+                onClick={() => setSuccess('')}
+                className="text-green-700 hover:text-green-900 ml-4 p-1 hover:bg-green-100 rounded transition-colors"
+                aria-label="Close success message"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border-2 border-red-300 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={() => setError('')}
+                className="text-red-700 hover:text-red-900 ml-4 p-1 hover:bg-red-100 rounded transition-colors"
+                aria-label="Close error message"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
 
           <div className="bg-white rounded-lg shadow-md">
         <div className="overflow-x-auto -mx-3 md:mx-0">
@@ -495,6 +589,128 @@ export default function Quotation() {
               >
                 <X size={24} />
               </button>
+            </div>
+
+            {/* Changes Required Banner */}
+            {(selectedQuotationDetails.status?.toLowerCase() === 'changes required' || 
+              selectedQuotationDetails.status?.toLowerCase() === 'changes_required') && (
+              <div className="mb-6 bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg">
+                <div className="flex items-start">
+                  <AlertCircle size={20} className="text-orange-600 flex-shrink-0 mt-0.5 mr-3" />
+                  <div>
+                    <h3 className="text-sm font-bold text-orange-900 mb-1">Changes Required</h3>
+                    <p className="text-sm text-orange-800">
+                      Customer has requested modifications to this quotation. Please review and make necessary changes, then mark as "Sent" again.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Status Timeline */}
+            <div className="mb-6 bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <RefreshCw size={16} />
+                Status Timeline
+              </h3>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                {/* Draft */}
+                <div className={`flex flex-col items-center ${
+                  selectedQuotationDetails.status?.toLowerCase() === 'draft' || !selectedQuotationDetails.status
+                    ? 'opacity-100' : 'opacity-40'
+                }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                    selectedQuotationDetails.status?.toLowerCase() === 'draft' || !selectedQuotationDetails.status
+                      ? 'bg-yellow-500 border-yellow-600 text-white'
+                      : 'bg-gray-200 border-gray-300 text-gray-500'
+                  }`}>
+                    1
+                  </div>
+                  <span className="text-xs font-medium text-gray-700 mt-1">Draft</span>
+                  {selectedQuotationDetails.createdAt && (
+                    <span className="text-xs text-gray-500">{new Date(selectedQuotationDetails.createdAt).toLocaleDateString()}</span>
+                  )}
+                </div>
+
+                {/* Arrow */}
+                <div className="flex-1 min-w-[20px] h-0.5 bg-gray-300"></div>
+
+                {/* Sent */}
+                <div className={`flex flex-col items-center ${
+                  ['sent', 'approved', 'rejected', 'changes required', 'converted'].includes(selectedQuotationDetails.status?.toLowerCase())
+                    ? 'opacity-100' : 'opacity-40'
+                }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                    ['sent', 'approved', 'rejected', 'changes required', 'converted'].includes(selectedQuotationDetails.status?.toLowerCase())
+                      ? 'bg-blue-500 border-blue-600 text-white'
+                      : 'bg-gray-200 border-gray-300 text-gray-500'
+                  }`}>
+                    2
+                  </div>
+                  <span className="text-xs font-medium text-gray-700 mt-1">Sent</span>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex-1 min-w-[20px] h-0.5 bg-gray-300"></div>
+
+                {/* Approved/Rejected/Changes Required */}
+                <div className={`flex flex-col items-center ${
+                  ['approved', 'rejected', 'changes required', 'converted'].includes(selectedQuotationDetails.status?.toLowerCase())
+                    ? 'opacity-100' : 'opacity-40'
+                }`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                    selectedQuotationDetails.status?.toLowerCase() === 'approved' || selectedQuotationDetails.status?.toLowerCase() === 'converted'
+                      ? 'bg-green-500 border-green-600 text-white'
+                      : selectedQuotationDetails.status?.toLowerCase() === 'rejected'
+                      ? 'bg-red-500 border-red-600 text-white'
+                      : selectedQuotationDetails.status?.toLowerCase() === 'changes required'
+                      ? 'bg-orange-500 border-orange-600 text-white'
+                      : 'bg-gray-200 border-gray-300 text-gray-500'
+                  }`}>
+                    {selectedQuotationDetails.status?.toLowerCase() === 'approved' || selectedQuotationDetails.status?.toLowerCase() === 'converted' ? (
+                      <CheckCircle size={16} />
+                    ) : selectedQuotationDetails.status?.toLowerCase() === 'rejected' ? (
+                      <XCircle size={16} />
+                    ) : selectedQuotationDetails.status?.toLowerCase() === 'changes required' ? (
+                      <AlertCircle size={16} />
+                    ) : (
+                      '3'
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-gray-700 mt-1">
+                    {selectedQuotationDetails.status?.toLowerCase() === 'approved' || selectedQuotationDetails.status?.toLowerCase() === 'converted'
+                      ? 'Approved'
+                      : selectedQuotationDetails.status?.toLowerCase() === 'rejected'
+                      ? 'Rejected'
+                      : selectedQuotationDetails.status?.toLowerCase() === 'changes required'
+                      ? 'Changes Req.'
+                      : 'Pending'}
+                  </span>
+                </div>
+
+                {/* Arrow - Only if Approved */}
+                {(selectedQuotationDetails.status?.toLowerCase() === 'approved' || 
+                  selectedQuotationDetails.status?.toLowerCase() === 'converted') && (
+                  <>
+                    <div className="flex-1 min-w-[20px] h-0.5 bg-gray-300"></div>
+
+                    {/* Converted */}
+                    <div className={`flex flex-col items-center ${
+                      selectedQuotationDetails.status?.toLowerCase() === 'converted'
+                        ? 'opacity-100' : 'opacity-40'
+                    }`}>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                        selectedQuotationDetails.status?.toLowerCase() === 'converted'
+                          ? 'bg-purple-500 border-purple-600 text-white'
+                          : 'bg-gray-200 border-gray-300 text-gray-500'
+                      }`}>
+                        <FileText size={16} />
+                      </div>
+                      <span className="text-xs font-medium text-gray-700 mt-1">Converted</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Quotation Information Grid */}
@@ -688,54 +904,130 @@ export default function Quotation() {
       {openMenuId && dropdownPosition && createPortal(
         <div
           ref={menuRef}
-          className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[10000]"
+          className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-[10000]"
           style={{
             top: `${dropdownPosition.top}px`,
             left: `${dropdownPosition.left}px`,
           }}
         >
           <div className="py-1">
-            <button
-              onClick={() => {
-                const quotation = quotations.find(q => q._id === openMenuId);
-                if (quotation) handleView(quotation);
-              }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2 transition-colors"
-            >
-              <Eye size={16} className="text-blue-600 flex-shrink-0" />
-              <span>View Details</span>
-            </button>
-            <button
-              onClick={() => {
-                const quotation = quotations.find(q => q._id === openMenuId);
-                if (quotation) handleEdit(quotation);
-              }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
-            >
-              <Edit size={16} className="text-green-600 flex-shrink-0" />
-              <span>Edit</span>
-            </button>
-            <button
-              onClick={() => {
-                const quotation = quotations.find(q => q._id === openMenuId);
-                if (quotation) handlePrint(quotation);
-              }}
-              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
-            >
-              <Printer size={16} className="text-gray-600 flex-shrink-0" />
-              <span>Print</span>
-            </button>
-            <div className="border-t border-gray-200 my-1"></div>
-            <button
-              onClick={() => {
-                const quotation = quotations.find(q => q._id === openMenuId);
-                if (quotation) handleDelete(quotation);
-              }}
-              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
-            >
-              <Trash2 size={16} className="flex-shrink-0" />
-              <span>Delete</span>
-            </button>
+            {(() => {
+              const quotation = quotations.find(q => q._id === openMenuId);
+              if (!quotation) return null;
+              const status = quotation.status || 'Draft';
+
+              return (
+                <>
+                  {/* View Details */}
+                  <button
+                    onClick={() => handleView(quotation)}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2 transition-colors"
+                  >
+                    <Eye size={16} className="text-blue-600 flex-shrink-0" />
+                    <span>View Details</span>
+                  </button>
+
+                  {/* Edit - Only if editable */}
+                  {canEditQuotation(status) && (
+                    <button
+                      onClick={() => handleEdit(quotation)}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
+                    >
+                      <Edit size={16} className="text-green-600 flex-shrink-0" />
+                      <span>Edit</span>
+                    </button>
+                  )}
+
+                  {/* Print */}
+                  <button
+                    onClick={() => handlePrint(quotation)}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                  >
+                    <Printer size={16} className="text-gray-600 flex-shrink-0" />
+                    <span>Print</span>
+                  </button>
+
+                  {/* Status Actions Divider */}
+                  <div className="border-t border-gray-200 my-1"></div>
+
+                  {/* Mark as Sent */}
+                  {canMarkAsSent(status) && (
+                    <button
+                      onClick={() => handleStatusUpdate(quotation._id, 'Sent')}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2 transition-colors"
+                    >
+                      <Send size={16} className="text-blue-600 flex-shrink-0" />
+                      <span>Mark as Sent</span>
+                    </button>
+                  )}
+
+                  {/* Mark as Approved */}
+                  {canMarkAsApproved(status) && (
+                    <button
+                      onClick={() => handleStatusUpdate(quotation._id, 'Approved')}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 flex items-center gap-2 transition-colors"
+                    >
+                      <CheckCircle size={16} className="text-green-600 flex-shrink-0" />
+                      <span>Mark as Approved</span>
+                    </button>
+                  )}
+
+                  {/* Mark as Rejected */}
+                  {canMarkAsRejected(status) && (
+                    <button
+                      onClick={() => handleStatusUpdate(quotation._id, 'Rejected')}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                    >
+                      <XCircle size={16} className="text-red-600 flex-shrink-0" />
+                      <span>Mark as Rejected</span>
+                    </button>
+                  )}
+
+                  {/* Request Changes */}
+                  {canRequestChanges(status) && (
+                    <button
+                      onClick={() => handleStatusUpdate(quotation._id, 'Changes Required')}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-orange-50 flex items-center gap-2 transition-colors"
+                    >
+                      <AlertCircle size={16} className="text-orange-600 flex-shrink-0" />
+                      <span>Request Changes</span>
+                    </button>
+                  )}
+
+                  {/* Convert to Order */}
+                  {canConvertToOrder(status) && (
+                    <>
+                      <div className="border-t border-gray-200 my-1"></div>
+                      <button
+                        onClick={() => {
+                          alert('Convert to Sales Order feature - Coming soon!\nThis will create a new order from this approved quotation.');
+                          setOpenMenuId(null);
+                          setDropdownPosition(null);
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-purple-50 flex items-center gap-2 transition-colors"
+                      >
+                        <FileText size={16} className="text-purple-600 flex-shrink-0" />
+                        <span>Convert to Order</span>
+                      </button>
+                    </>
+                  )}
+
+                  {/* Delete - Only if allowed */}
+                  {canDeleteQuotation(status) && (
+                    <>
+                      <div className="border-t border-gray-200 my-1"></div>
+                      <button
+                        onClick={() => handleDelete(quotation)}
+                        className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                      >
+                        <Trash2 size={16} className="flex-shrink-0" />
+                        <span>Delete</span>
+                      </button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>,
         document.body

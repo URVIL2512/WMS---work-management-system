@@ -375,7 +375,7 @@ export default function Orders() {
         updated[itemIndex].processes = [];
       }
       updated[itemIndex].processes.push({
-        processId: '',
+        processId: '', // Will be filtered out if empty before submission
         processName: '',
         rate: 0,
         quantity: 1,
@@ -752,13 +752,19 @@ export default function Orders() {
           quantity: item.quantity,
           rate: item.rate,
           itemTotal: item.itemTotal,
-          processes: item.processes.map(p => ({
-            processId: p.processId,
-            processName: p.processName,
-            rate: p.rate,
-            quantity: p.quantity,
-            amount: p.amount
-          }))
+          processes: item.processes.map(p => {
+            const process: any = {
+              processName: p.processName,
+              rate: p.rate,
+              quantity: p.quantity,
+              amount: p.amount
+            };
+            // Only include processId if it's not empty
+            if (p.processId && p.processId.trim()) {
+              process.processId = p.processId;
+            }
+            return process;
+          })
         }));
         payload.gstPercent = formData.gstPercent || 0;
         payload.packagingCost = formData.packagingCost || 0;
@@ -1805,9 +1811,24 @@ export default function Orders() {
                       <p>No items added. Click "Add New Item" to start.</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                       {orderItems.map((item, itemIndex) => (
-                        <div key={itemIndex} className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                        <div key={itemIndex} className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow">
+                          {/* Item Header Badge */}
+                          <div className="flex items-center justify-between mb-4 pb-3 border-b-2 border-gray-300">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-500 text-white font-bold text-sm">
+                                {itemIndex + 1}
+                              </span>
+                              <span className="font-bold text-gray-900 text-lg">
+                                {item.itemName || 'New Item'}
+                              </span>
+                            </div>
+                            <span className="text-lg font-bold text-green-600">
+                              ₹{item.itemTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
                           {/* Item Row */}
                           <div className="grid grid-cols-12 gap-4 items-start mb-4">
                             <div className="col-span-12 md:col-span-4">
