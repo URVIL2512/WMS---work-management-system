@@ -28,6 +28,8 @@ export default function Quotation() {
   const [deleting, setDeleting] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [quotationToEdit, setQuotationToEdit] = useState<any>(null);
+  const [showViewDetails, setShowViewDetails] = useState(false);
+  const [selectedQuotationDetails, setSelectedQuotationDetails] = useState<any>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
@@ -300,9 +302,8 @@ export default function Quotation() {
     try {
       const response = await api.get(`/quotations/${quotation._id}`);
       if (response.data.success) {
-        // For now, just log the data. You can implement a view modal later
-        console.log('Quotation details:', response.data.data);
-        alert(`Viewing quotation: ${quotation.quotationNumber}\nTotal: ₹${quotation.totalAmount}`);
+        setSelectedQuotationDetails(response.data.data);
+        setShowViewDetails(true);
       }
     } catch (err: any) {
       console.error('Error fetching quotation details:', err);
@@ -310,6 +311,28 @@ export default function Quotation() {
     }
     setOpenMenuId(null);
     setDropdownPosition(null);
+  };
+
+  const handleCloseViewDetails = () => {
+    setShowViewDetails(false);
+    setSelectedQuotationDetails(null);
+  };
+
+  const getStatusBadgeColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'draft':
+        return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+      case 'sent':
+        return 'bg-blue-100 text-blue-700 border-blue-300';
+      case 'approved':
+        return 'bg-green-100 text-green-700 border-green-300';
+      case 'rejected':
+        return 'bg-red-100 text-red-700 border-red-300';
+      case 'converted':
+        return 'bg-purple-100 text-purple-700 border-purple-300';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-300';
+    }
   };
 
   const handleEdit = async (quotation: QuotationItem) => {
@@ -344,7 +367,7 @@ export default function Quotation() {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      {!showModal && (
+      {!showModal && !showViewDetails && (
         <>
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
             <div>
@@ -410,8 +433,10 @@ export default function Quotation() {
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${
-                        quotation.status === 'Approved' ? 'bg-green-100 text-green-700' :
-                        quotation.status === 'Sent' ? 'bg-blue-100 text-blue-700' :
+                        quotation.status?.toLowerCase() === 'approved' ? 'bg-green-100 text-green-700' :
+                        quotation.status?.toLowerCase() === 'sent' ? 'bg-blue-100 text-blue-700' :
+                        quotation.status?.toLowerCase() === 'rejected' ? 'bg-red-100 text-red-700' :
+                        quotation.status?.toLowerCase() === 'converted' ? 'bg-purple-100 text-purple-700' :
                         'bg-yellow-100 text-yellow-700'
                       }`}>
                         {quotation.status || 'Draft'}
@@ -448,6 +473,214 @@ export default function Quotation() {
             }}
             quotationToEdit={quotationToEdit}
           />
+        </div>
+      )}
+
+      {/* View Quotation Details */}
+      {showViewDetails && selectedQuotationDetails && (
+        <div className="bg-white rounded-lg shadow-md">
+          <div className="p-6">
+            {/* Header with Status and Close Button */}
+            <div className="flex justify-between items-start mb-6 pb-4 border-b border-gray-300">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Quotation Details</h2>
+                <span className={`inline-block px-4 py-1.5 text-sm font-semibold rounded-full border ${getStatusBadgeColor(selectedQuotationDetails.status || 'Draft')}`}>
+                  {selectedQuotationDetails.status || 'Draft'}
+                </span>
+              </div>
+              <button
+                onClick={handleCloseViewDetails}
+                className="text-gray-500 hover:text-gray-700 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Close"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Quotation Information Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Quotation Number</label>
+                <p className="text-gray-900">{selectedQuotationDetails.quotationNumber}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Name</label>
+                <p className="text-gray-900">{selectedQuotationDetails.partyName}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Quote Date</label>
+                <p className="text-gray-900">
+                  {selectedQuotationDetails.quotationDate 
+                    ? new Date(selectedQuotationDetails.quotationDate).toLocaleDateString() 
+                    : new Date(selectedQuotationDetails.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Expiry Date</label>
+                <p className="text-gray-900">
+                  {selectedQuotationDetails.validUntil 
+                    ? new Date(selectedQuotationDetails.validUntil).toLocaleDateString() 
+                    : 'N/A'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Created By</label>
+                <p className="text-gray-900">{selectedQuotationDetails.createdBy?.name || 'N/A'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Created Date</label>
+                <p className="text-gray-900">
+                  {new Date(selectedQuotationDetails.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+
+            {/* Subject */}
+            {selectedQuotationDetails.subject && (
+              <div className="mb-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Subject</label>
+                <p className="text-gray-900">{selectedQuotationDetails.subject}</p>
+              </div>
+            )}
+
+            {/* Item List Table */}
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-3">Items</h3>
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Item Name</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Quantity</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Rate</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Discount</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {selectedQuotationDetails.items && selectedQuotationDetails.items.length > 0 ? (
+                      selectedQuotationDetails.items.map((item: any, index: number) => (
+                        <tr key={index}>
+                          <td className="px-4 py-3 text-sm text-gray-900">{item.itemName}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{item.quantity}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                            ₹{(item.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{item.discount || 0}%</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                            ₹{(item.subTotal || item.lineTotal || item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))
+                    ) : selectedQuotationDetails.processes && selectedQuotationDetails.processes.length > 0 ? (
+                      selectedQuotationDetails.processes.map((process: any, index: number) => (
+                        <tr key={index}>
+                          <td className="px-4 py-3 text-sm text-gray-900">{process.processName}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">{process.quantity || 1}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                            ₹{(process.rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right">0%</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                            ₹{((process.rate || 0) * (process.quantity || 1)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-3 text-sm text-gray-500 text-center">No items found</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="bg-gray-50 rounded-lg p-6 space-y-3">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Financial Summary</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700">Subtotal:</span>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ₹{(selectedQuotationDetails.totalSubTotal || selectedQuotationDetails.baseAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {selectedQuotationDetails.gstPercent > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">
+                      GST ({selectedQuotationDetails.gstPercent}%):
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      ₹{(selectedQuotationDetails.totalTaxAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {selectedQuotationDetails.tdsPercent > 0 && (
+                  <div className="flex justify-between items-center text-red-600">
+                    <span className="text-sm font-medium">
+                      TDS ({selectedQuotationDetails.tdsPercent}%):
+                    </span>
+                    <span className="text-sm font-semibold">
+                      -₹{(selectedQuotationDetails.tdsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {selectedQuotationDetails.tcsPercent > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">
+                      TCS ({selectedQuotationDetails.tcsPercent}%):
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      ₹{(selectedQuotationDetails.tcsAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                {selectedQuotationDetails.remittanceCharges > 0 && (
+                  <div className="flex justify-between items-center text-red-600">
+                    <span className="text-sm font-medium">Remittance Charges:</span>
+                    <span className="text-sm font-semibold">
+                      -₹{(selectedQuotationDetails.remittanceCharges || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                <div className="border-t-2 border-gray-300 pt-3 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-base font-bold text-gray-900">Total Amount:</span>
+                    <span className="text-xl font-bold text-green-600">
+                      ₹{(selectedQuotationDetails.totalAmount || selectedQuotationDetails.receivableAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Customer Notes */}
+            {selectedQuotationDetails.customerNotes && (
+              <div className="mt-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Customer Notes</label>
+                <p className="text-gray-900 whitespace-pre-wrap">{selectedQuotationDetails.customerNotes}</p>
+              </div>
+            )}
+
+            {/* Terms and Conditions */}
+            {selectedQuotationDetails.termsAndConditions && (
+              <div className="mt-6">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Terms & Conditions</label>
+                <p className="text-gray-900 whitespace-pre-wrap">{selectedQuotationDetails.termsAndConditions}</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-300">
+              <button
+                onClick={handleCloseViewDetails}
+                className="px-6 py-2 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold transition-all duration-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

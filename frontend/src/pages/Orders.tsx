@@ -1432,11 +1432,13 @@ export default function Orders() {
     }
   };
 
-  // Show form view if modal is open (full-page like QuotationForm)
-  if (showModal || showEditModal) {
-    return (
-      <div className="w-full h-full bg-white overflow-y-auto overflow-x-visible">
-        <form onSubmit={showModal ? handleSubmit : handleUpdateSubmit} className="px-4 pt-4 pb-16">
+  // Main return with conditional rendering
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {/* Create/Edit Order Form */}
+      {(showModal || showEditModal) && (
+        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          <form onSubmit={showModal ? handleSubmit : handleUpdateSubmit} className="p-6">
           {success && (
             <div className="mb-2 bg-green-50 border-2 border-green-300 text-green-700 px-3 py-2 rounded-lg flex items-center justify-between">
               <span>{success}</span>
@@ -2252,19 +2254,18 @@ export default function Orders() {
                 }}
                 className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 rounded-lg transition-colors"
               >
-                Cancel
+                Back to Orders
               </button>
             </div>
           </div>
         </form>
-      </div>
-    );
-  }
+        </div>
+      )}
 
-  // Main return - Orders list view
-  return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
+      {/* Orders List View */}
+      {!showModal && !showEditModal && (
+        <>
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-0">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Orders Management</h1>
           <p className="text-sm md:text-base text-gray-500 mt-1">Track and manage customer orders</p>
@@ -3098,6 +3099,8 @@ export default function Orders() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
