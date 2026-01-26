@@ -410,10 +410,14 @@ export default function Orders() {
       updated[itemIndex].itemTotal = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
       return updated;
     });
-    // Close process dropdown
+    // Close process dropdown and clear search
     const processKey = `${itemIndex}-${processIndex}`;
     setShowProcessDropdown(prev => ({ ...prev, [processKey]: false }));
-    setProcessSearch(prev => ({ ...prev, [processKey]: process.name || '' }));
+    setProcessSearch(prev => {
+      const newSearch = { ...prev };
+      delete newSearch[processKey]; // Clear the search term
+      return newSearch;
+    });
   };
 
   const handleProcessChange = (itemIndex: number, processIndex: number, field: string, value: any) => {
@@ -1841,7 +1845,7 @@ export default function Orders() {
                                       .filter((im) => im.status === 'Active')
                                       .filter((im) => 
                                         !itemSearch[itemIndex] || 
-                                        im.name.toLowerCase().includes(itemSearch[itemIndex].toLowerCase())
+                                        (im.name && im.name.toLowerCase().includes(itemSearch[itemIndex].toLowerCase()))
                                       )
                                       .map((im) => (
                                         <button
@@ -1850,7 +1854,7 @@ export default function Orders() {
                                           onClick={() => handleItemSelect(itemIndex, im)}
                                           className="w-full text-left px-4 py-3 hover:bg-blue-50 border-b border-gray-100 transition-colors"
                                         >
-                                          <div className="font-medium text-gray-900">{im.name}</div>
+                                          <div className="font-medium text-gray-900">{im.name || 'Unnamed Item'}</div>
                                           <div className="text-sm text-gray-500">
                                             ₹{im.sellingPrice?.toLocaleString() || '0'} / {im.unitOfMeasure || 'PCS'}
                                           </div>
@@ -1945,29 +1949,38 @@ export default function Orders() {
                                       <div className="relative">
                                         <input
                                           type="text"
-                                          value={processSearch[`${itemIndex}-${processIndex}`] || ''}
+                                          value={process.processName || ''}
                                           onChange={(e) => {
-                                            const newSearch = { ...processSearch };
-                                            newSearch[`${itemIndex}-${processIndex}`] = e.target.value;
-                                            setProcessSearch(newSearch);
+                                            // Update the actual process name
+                                            handleProcessChange(itemIndex, processIndex, 'processName', e.target.value);
+                                            // Show dropdown for suggestions
                                             const newShow = { ...showProcessDropdown };
                                             newShow[`${itemIndex}-${processIndex}`] = true;
                                             setShowProcessDropdown(newShow);
                                           }}
                                           onFocus={() => {
+                                            // Show dropdown
                                             const newShow = { ...showProcessDropdown };
                                             newShow[`${itemIndex}-${processIndex}`] = true;
                                             setShowProcessDropdown(newShow);
                                           }}
+                                          onBlur={() => {
+                                            // Close dropdown after a short delay to allow click on dropdown items
+                                            setTimeout(() => {
+                                              const newShow = { ...showProcessDropdown };
+                                              newShow[`${itemIndex}-${processIndex}`] = false;
+                                              setShowProcessDropdown(newShow);
+                                            }, 200);
+                                          }}
                                           className="w-full px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                                          placeholder="Search process..."
+                                          placeholder="Type or search process..."
                                         />
                                         {showProcessDropdown[`${itemIndex}-${processIndex}`] && (
                                           <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto">
                                             {processMasters
                                               .filter((pm) => 
-                                                !processSearch[`${itemIndex}-${processIndex}`] || 
-                                                pm.name.toLowerCase().includes(processSearch[`${itemIndex}-${processIndex}`].toLowerCase())
+                                                !process.processName || 
+                                                (pm.name && pm.name.toLowerCase().includes(process.processName.toLowerCase()))
                                               )
                                               .map((pm) => (
                                                 <button
@@ -1976,7 +1989,7 @@ export default function Orders() {
                                                   onClick={() => handleProcessSelect(itemIndex, processIndex, pm)}
                                                   className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 transition-colors text-sm"
                                                 >
-                                                  {pm.name}
+                                                  {pm.name || 'Unnamed Process'}
                                                 </button>
                                               ))}
                                           </div>
