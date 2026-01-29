@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Search, Plus, Trash2, Info } from 'lucide-react';
+import { X, Search, Plus, Trash2, Info, ChevronDown, ChevronUp, Package, CheckCircle, AlertCircle } from 'lucide-react';
 import api from '../api/axios';
 import CustomerForm from './CustomerForm';
 import ItemForm from './ItemForm';
+import ProcessForm from './ProcessForm';
 
 // Note: useNavigate is not used in this component - removed to fix ReferenceError
 
@@ -41,6 +42,15 @@ interface Item {
   };
 }
 
+interface Process {
+  processId?: string;
+  processName: string;
+  processCost: number;
+  processDescription?: string;
+  quantity: number;
+  processTotal: number;
+}
+
 interface QuotationItem {
   itemId?: string;
   itemName: string;
@@ -48,6 +58,8 @@ interface QuotationItem {
   rate: number;
   discount: number;
   amount: number;
+  processes: Process[];
+  itemTotal: number;
 }
 
 interface TaxOption {
@@ -80,8 +92,9 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
 
   // Item state
   const [items, setItems] = useState<QuotationItem[]>([
-    { itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0 }
+    { itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0, processes: [], itemTotal: 0 }
   ]);
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
   const [itemMasters, setItemMasters] = useState<Item[]>([]);
   const [itemSearch, setItemSearch] = useState<string[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState<boolean[]>([]);
@@ -89,6 +102,13 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
   const [itemDropdownPositions, setItemDropdownPositions] = useState<{ [key: number]: { top: number; left: number; width: number } }>({});
   const itemDropdownRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const itemInputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
+
+  // Process Master state
+  const [processMasters, setProcessMasters] = useState<any[]>([]);
+  const [processSearch, setProcessSearch] = useState<{ [key: string]: string }>({});
+  const [showProcessDropdown, setShowProcessDropdown] = useState<{ [key: string]: boolean }>({});
+  const [showProcessForm, setShowProcessForm] = useState(false);
+  const [processFormContext, setProcessFormContext] = useState<{ itemIndex: number; processIndex: number } | null>(null);
 
   // Tax state
   const [taxMode, setTaxMode] = useState<'TDS' | 'TCS'>('TDS');
@@ -141,6 +161,7 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
   useEffect(() => {
     fetchCustomers();
     fetchItems();
+    fetchProcessMasters();
     if (!quotationToEdit) {
       fetchNextQuotationNumber();
     }
@@ -262,6 +283,59 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     }
   };
 
+  const fetchProcessMasters = async () => {
+    try {
+      const response = await api.get('/masters/Process?isActive=true');
+      if (response.data.success) {
+        setProcessMasters(response.data.data || []);
+      }
+    } catch (err: any) {
+      console.error('Error fetching process masters:', err);
+    }
+  };
+
+  const handleAddNewProcess = (itemIndex: number, processIndex: number) => {
+    setProcessFormContext({ itemIndex, processIndex });
+    setShowProcessForm(true);
+    // Close the dropdown
+    setShowProcessDropdown(prev => ({ ...prev, [`${itemIndex}-${processIndex}`]: false }));
+  };
+
+  const handleProcessFormSuccess = async (process: { _id: string; name: string; cost?: number }) => {
+    // Refresh process masters list
+    await fetchProcessMasters();
+    
+    // Auto-select the newly created process
+    if (processFormContext) {
+      const { itemIndex, processIndex } = processFormContext;
+      setItems(prev => {
+        const updated = [...prev];
+        updated[itemIndex].processes[processIndex] = {
+          ...updated[itemIndex].processes[processIndex],
+          processId: process._id,
+          processName: process.name,
+          processCost: process.cost || 0
+        };
+        
+        // Recalculate amounts
+        const processObj = updated[itemIndex].processes[processIndex];
+        processObj.processTotal = (processObj.processCost || 0) * (processObj.quantity || 1);
+        
+        const itemGross = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+        const discountValue = (itemGross * (updated[itemIndex].discount || 0)) / 100;
+        const itemNet = itemGross - discountValue;
+        const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+        updated[itemIndex].itemTotal = itemNet + totalProcessAmount;
+        updated[itemIndex].amount = updated[itemIndex].itemTotal;
+        
+        return updated;
+      });
+    }
+    
+    setShowProcessForm(false);
+    setProcessFormContext(null);
+  };
+
   const loadQuotationData = () => {
     if (!quotationToEdit) return;
     
@@ -286,11 +360,21 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     // Load items
     if (quotationToEdit.items && quotationToEdit.items.length > 0) {
       const loadedItems = quotationToEdit.items.map((item: any) => ({
-        itemId: item._id,
+        itemId: item._id || item.itemId,
         itemName: item.itemName || '',
         quantity: item.quantity || 1,
         rate: item.rate || 0,
-        amount: item.subTotal || item.lineTotal || ((item.quantity || 1) * (item.rate || 0))
+        discount: item.discount || 0,
+        amount: item.subTotal || item.lineTotal || item.amount || ((item.quantity || 1) * (item.rate || 0)),
+        processes: (item.processes || []).map((p: any) => ({
+          processId: p.processId || p._id || '',
+          processName: p.processName || '',
+          processCost: p.processCost || 0,
+          processDescription: p.processDescription || '',
+          quantity: p.quantity || 1,
+          processTotal: p.processTotal || 0
+        })),
+        itemTotal: item.itemTotal || item.amount || 0
       }));
       setItems(loadedItems);
       setItemSearch(new Array(loadedItems.length).fill(''));
@@ -340,7 +424,8 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     return Math.round((subtotal - discountAmount) * 100) / 100;
   };
 
-  const baseAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  // STEP 5: Base Amount = Sum of All Item Final Amounts (itemTotal)
+  const baseAmount = items.reduce((sum, item) => sum + (item.itemTotal || item.amount), 0);
 
   const calculateGST = (): number => {
     if (!selectedCustomer) return 0;
@@ -384,8 +469,13 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
   const gst = calculateGST();
   const tds = calculateTDS();
   const tcs = calculateTCS();
-  const invoiceTotal = baseAmount + gst;
-  const receivableAmount = invoiceTotal - tds - remittanceCharges;
+  
+  // STEP 10: Quotation Total = Base Amount + GST + TCS - TDS + Remittance
+  const quotationTotal = baseAmount + gst + tcs - tds + remittanceCharges;
+  const invoiceTotal = quotationTotal;
+  
+  // STEP 11: Currency Conversion (Receivable Amount = Quotation Total × Exchange Rate)
+  const receivableAmount = quotationTotal * (exchangeRate || 1);
 
   // Handlers
   const handleCustomerSelect = (customer: Customer) => {
@@ -509,12 +599,23 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     const sellingPrice = (item as any).sellingPrice || item.additionalFields?.rate || 0;
     const itemName = (item as any).itemName || item.name;
     
+    // Recalculate with proper logic
+    const quantity = updatedItems[index].quantity;
+    const discount = updatedItems[index].discount || 0;
+    const processes = updatedItems[index].processes || [];
+    const itemGross = quantity * sellingPrice;
+    const discountValue = (itemGross * discount) / 100;
+    const itemNet = itemGross - discountValue;
+    const totalProcessAmount = processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+    const itemTotal = itemNet + totalProcessAmount;
+    
     updatedItems[index] = {
       ...updatedItems[index],
       itemId: item._id,
       itemName: itemName,
       rate: sellingPrice,
-      amount: calculateItemAmount(updatedItems[index].quantity, sellingPrice, updatedItems[index].discount || 0)
+      itemTotal: itemTotal,
+      amount: itemTotal
     };
     
     // Auto-fill GST if item has gstPercent
@@ -530,7 +631,7 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     });
     setItemSearch(prev => {
       const newState = [...prev];
-      newState[index] = '';
+      newState[index] = itemName;
       return newState;
     });
     // Clear position
@@ -543,28 +644,29 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
 
   const handleItemChange = (index: number, field: 'quantity' | 'rate' | 'discount', value: number) => {
     const updatedItems = [...items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: value,
-      amount: calculateItemAmount(
-        field === 'quantity' ? value : updatedItems[index].quantity,
-        field === 'rate' ? value : updatedItems[index].rate,
-        field === 'discount' ? value : (updatedItems[index].discount || 0)
-      )
-    };
+    updatedItems[index][field] = value;
+    
+    // Recalculate with proper logic
+    const itemGross = (field === 'quantity' ? value : updatedItems[index].quantity) * (field === 'rate' ? value : updatedItems[index].rate);
+    const discountValue = (itemGross * (field === 'discount' ? value : (updatedItems[index].discount || 0))) / 100;
+    const itemNet = itemGross - discountValue;
+    const totalProcessAmount = updatedItems[index].processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+    updatedItems[index].itemTotal = itemNet + totalProcessAmount;
+    updatedItems[index].amount = updatedItems[index].itemTotal;
+    
     setItems(updatedItems);
   };
 
   const handleAddRow = () => {
     const newIndex = items.length;
-    setItems([...items, { itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0 }]);
+    setItems([...items, { itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0, processes: [], itemTotal: 0 }]);
     setItemSearch([...itemSearch, '']);
     setShowItemDropdown([...showItemDropdown, false]);
   };
 
   const handleDeleteAll = () => {
     if (window.confirm('Are you sure you want to delete all items?')) {
-      setItems([{ itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0 }]);
+      setItems([{ itemName: '', quantity: 1, rate: 0, discount: 0, amount: 0, processes: [], itemTotal: 0 }]);
       setItemSearch(['']);
       setShowItemDropdown([false]);
     }
@@ -576,6 +678,104 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
       setItemSearch(itemSearch.filter((_, i) => i !== index));
       setShowItemDropdown(showItemDropdown.filter((_, i) => i !== index));
     }
+  };
+
+  // Process handlers
+  const handleAddProcess = (itemIndex: number) => {
+    setItems(prev => {
+      const updated = [...prev];
+      if (!updated[itemIndex].processes) {
+        updated[itemIndex].processes = [];
+      }
+      updated[itemIndex].processes.push({
+        processId: '',
+        processName: '',
+        processCost: null,
+        processDescription: '',
+        quantity: 1,
+        processTotal: 0
+      });
+      return updated;
+    });
+  };
+
+  const handleRemoveProcess = (itemIndex: number, processIndex: number) => {
+    setItems(prev => {
+      const updated = [...prev];
+      updated[itemIndex].processes = updated[itemIndex].processes.filter((_, i) => i !== processIndex);
+      
+      // Recalculate item total with proper logic
+      const itemGross = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      const discountValue = (itemGross * (updated[itemIndex].discount || 0)) / 100;
+      const itemNet = itemGross - discountValue;
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+      updated[itemIndex].itemTotal = itemNet + totalProcessAmount;
+      updated[itemIndex].amount = updated[itemIndex].itemTotal;
+      
+      return updated;
+    });
+  };
+
+  const handleProcessSelect = (itemIndex: number, processIndex: number, process: any) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const selectedProcess = updated[itemIndex].processes[processIndex];
+      // Auto-fill cost from master data
+      const processCost = process.additionalFields?.cost || selectedProcess?.processCost || 0;
+      const processQuantity = selectedProcess?.quantity || 1;
+      
+      updated[itemIndex].processes[processIndex] = {
+        processId: process._id || '',
+        processName: process.name || '',
+        processCost: processCost,
+        processDescription: selectedProcess?.processDescription || process.additionalFields?.description || '',
+        quantity: processQuantity,
+        processTotal: processCost * processQuantity
+      };
+      
+      // Recalculate item total with proper logic
+      const itemGross = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      const discountValue = (itemGross * (updated[itemIndex].discount || 0)) / 100;
+      const itemNet = itemGross - discountValue;
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+      updated[itemIndex].itemTotal = itemNet + totalProcessAmount;
+      updated[itemIndex].amount = updated[itemIndex].itemTotal;
+      
+      // Close dropdown
+      const newShow = { ...showProcessDropdown };
+      newShow[`${itemIndex}-${processIndex}`] = false;
+      setShowProcessDropdown(newShow);
+      return updated;
+    });
+  };
+
+  const handleProcessChange = (itemIndex: number, processIndex: number, field: keyof Process, value: any) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const process = updated[itemIndex].processes[processIndex];
+      (process as any)[field] = value;
+      
+      // STEP 1: Calculate process amount (Process Rate × Process Quantity)
+      if (field === 'processCost' || field === 'quantity') {
+        process.processTotal = (process.processCost || 0) * (process.quantity || 1);
+      }
+      
+      // STEP 2: Calculate Item Gross (Item Rate × Item Quantity)
+      const itemGross = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      
+      // STEP 3: Apply Item Discount
+      const discountValue = (itemGross * (updated[itemIndex].discount || 0)) / 100;
+      const itemNet = itemGross - discountValue;
+      
+      // STEP 4: Add Process Charges To Item (Item Final = Item Net + Total Process Amount)
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.processTotal || 0), 0);
+      updated[itemIndex].itemTotal = itemNet + totalProcessAmount;
+      
+      // Update amount field for backward compatibility
+      updated[itemIndex].amount = updated[itemIndex].itemTotal;
+      
+      return updated;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -624,12 +824,28 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
         customerNotes: customerNotes,
         termsAndConditions: termsAndConditions,
         items: items.map(item => ({
+          itemId: item.itemId || undefined,
           itemName: item.itemName,
           quantity: item.quantity,
           rate: item.rate,
           discount: item.discount || 0,
           subTotal: item.amount,
-          lineTotal: item.amount
+          lineTotal: item.amount,
+          itemTotal: item.itemTotal || 0,
+          processes: (item.processes || []).map(p => {
+            const process: any = {
+              processName: p.processName,
+              processCost: p.processCost,
+              processDescription: p.processDescription || '',
+              quantity: p.quantity,
+              processTotal: p.processTotal
+            };
+            // Only include processId if it's not empty
+            if (p.processId && p.processId.trim()) {
+              process.processId = p.processId;
+            }
+            return process;
+          })
         })),
         processes: processes, // Required by backend validation
         gstPercent,
@@ -681,28 +897,34 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
     <div className="w-full bg-white">
       <form onSubmit={handleSubmit} className="p-6">
           {success && (
-            <div className="mb-2 bg-green-50 border-2 border-green-300 text-green-700 px-3 py-2 rounded-lg flex items-center justify-between">
-              <span>{success}</span>
+            <div className="mb-4 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 text-green-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
+                <span className="font-semibold text-base">{success}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setSuccess('')}
-                className="text-green-700 hover:text-green-900 ml-2 p-1 hover:bg-green-100 rounded transition-colors"
+                className="text-green-600 hover:text-green-800 hover:bg-green-200 p-2 rounded-full transition-all duration-200 ml-4"
                 aria-label="Close success message"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
           )}
           {error && (
-            <div className="mb-2 bg-red-50 border-2 border-red-300 text-red-700 px-3 py-2 rounded-lg flex items-center justify-between">
-              <span>{error}</span>
+            <div className="mb-4 bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 text-red-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                <AlertCircle size={24} className="text-red-600 flex-shrink-0" />
+                <span className="font-semibold text-base">{error}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setError('')}
-                className="text-red-700 hover:text-red-900 ml-2 p-1 hover:bg-red-100 rounded transition-colors"
+                className="text-red-600 hover:text-red-800 hover:bg-red-200 p-2 rounded-full transition-all duration-200 ml-4"
                 aria-label="Close error message"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
           )}
@@ -881,119 +1103,129 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
                 </div>
               </div>
 
-              {/* Item Table */}
+              {/* Items with Process Management */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-900">Item Table</h3>
+                  <h3 className="text-lg font-bold text-gray-900">Items <span className="text-red-500">*</span></h3>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setTimeout(() => {
-                        setShowAddItemModal(true);
-                      }, 100);
+                      handleAddRow();
                     }}
-                    data-add-item-button
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2 font-semibold transition-all"
+                    className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-all font-bold flex items-center gap-2 shadow-md hover:shadow-lg"
                   >
                     <Plus size={18} />
-                    <span>Add New Item</span>
+                    Add New Item
                   </button>
                 </div>
 
-                <div className="border border-gray-300 rounded-lg overflow-visible">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 sticky top-0 z-20">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b w-[40%]">ITEM DETAILS</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b w-[12%]">QUANTITY</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b w-[12%]">RATE</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b w-[12%]">DISCOUNT</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b w-[18%]">AMOUNT</th>
-                        <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b w-[6%]"></th>
-                      </tr>
-                    </thead>
-                      <tbody>
-                        {items.map((item, index) => (
-                          <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-all duration-150 animate-fadeIn">
-                            <td className="px-4 py-3">
-                              <div className="relative">
-                                <input
-                                  ref={(el) => { itemInputRefs.current[index] = el; }}
-                                  type="text"
-                                  value={item.itemName}
-                                  onChange={(e) => {
-                                    const updatedItems = [...items];
-                                    updatedItems[index].itemName = e.target.value;
-                                    setItems(updatedItems);
-                                    const newSearch = [...itemSearch];
-                                    newSearch[index] = e.target.value;
-                                    setItemSearch(newSearch);
-                                    setShowItemDropdown(prev => {
-                                      const newState = [...prev];
-                                      newState[index] = true;
-                                      return newState;
-                                    });
-                                    calculateItemDropdownPosition(index);
+                {items.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>No items added. Click "Add New Item" to start.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {items.map((item, itemIndex) => (
+                      <div key={itemIndex} className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow">
+                        {/* Item Header Badge */}
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b-2 border-gray-300">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-500 text-white font-bold text-sm">
+                              {itemIndex + 1}
+                            </span>
+                            <span className="font-bold text-gray-900 text-lg">
+                              {item.itemName || 'New Item'}
+                            </span>
+                          </div>
+                          <span className="text-lg font-bold text-green-600">
+                            ₹{(item.itemTotal || item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+
+                        {/* Item Row */}
+                        <div className="grid grid-cols-12 gap-4 items-start mb-4">
+                          <div className="col-span-12 md:col-span-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Item Name <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <input
+                                ref={(el) => { itemInputRefs.current[itemIndex] = el; }}
+                                type="text"
+                                value={item.itemName}
+                                onChange={(e) => {
+                                  const updatedItems = [...items];
+                                  updatedItems[itemIndex].itemName = e.target.value;
+                                  setItems(updatedItems);
+                                  const newSearch = [...itemSearch];
+                                  newSearch[itemIndex] = e.target.value;
+                                  setItemSearch(newSearch);
+                                  setShowItemDropdown(prev => {
+                                    const newState = [...prev];
+                                    newState[itemIndex] = true;
+                                    return newState;
+                                  });
+                                  calculateItemDropdownPosition(itemIndex);
+                                }}
+                                onFocus={(e) => {
+                                  e.target.classList.add('ring-2', 'ring-green-500');
+                                  setShowItemDropdown(prev => {
+                                    const newState = [...prev];
+                                    newState[itemIndex] = true;
+                                    return newState;
+                                  });
+                                  calculateItemDropdownPosition(itemIndex);
+                                }}
+                                onBlur={(e) => {
+                                  e.target.classList.remove('ring-2', 'ring-green-500');
+                                  setTimeout(() => {
+                                    const activeElement = document.activeElement;
+                                    if (!itemDropdownRefs.current[itemIndex]?.contains(activeElement)) {
+                                      setShowItemDropdown(prev => {
+                                        const newState = [...prev];
+                                        newState[itemIndex] = false;
+                                        return newState;
+                                      });
+                                      setItemDropdownPositions(prev => {
+                                        const newPos = { ...prev };
+                                        delete newPos[itemIndex];
+                                        return newPos;
+                                      });
+                                    }
+                                  }, 200);
+                                }}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                placeholder="Search item..."
+                                required
+                              />
+                              {showItemDropdown[itemIndex] && itemDropdownPositions[itemIndex] && createPortal(
+                                <div 
+                                  ref={(el) => { itemDropdownRefs.current[itemIndex] = el; }}
+                                  className="fixed z-[99999] bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto flex flex-col"
+                                  style={{
+                                    top: `${itemDropdownPositions[itemIndex].top}px`,
+                                    left: `${itemDropdownPositions[itemIndex].left}px`,
+                                    width: `${itemDropdownPositions[itemIndex].width}px`,
+                                    minWidth: '200px'
                                   }}
-                                  onFocus={(e) => {
-                                    e.target.classList.add('ring-2', 'ring-blue-500');
-                                    setShowItemDropdown(prev => {
-                                      const newState = [...prev];
-                                      newState[index] = true;
-                                      return newState;
-                                    });
-                                    calculateItemDropdownPosition(index);
-                                  }}
-                                  onBlur={(e) => {
-                                    e.target.classList.remove('ring-2', 'ring-blue-500');
-                                    // Delay closing dropdown to allow click events
-                                    setTimeout(() => {
-                                      const activeElement = document.activeElement;
-                                      if (!itemDropdownRefs.current[index]?.contains(activeElement)) {
-                                        setShowItemDropdown(prev => {
-                                          const newState = [...prev];
-                                          newState[index] = false;
-                                          return newState;
-                                        });
-                                        setItemDropdownPositions(prev => {
-                                          const newPos = { ...prev };
-                                          delete newPos[index];
-                                          return newPos;
-                                        });
-                                      }
-                                    }, 200);
-                                  }}
-                                  placeholder="Type or click to select an item"
-                                  className="w-full px-3 py-2 border-2 border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                />
-                                {showItemDropdown[index] && itemDropdownPositions[index] && createPortal(
-                                  <div 
-                                    ref={(el) => { itemDropdownRefs.current[index] = el; }}
-                                    className="fixed z-[99999] bg-white border-2 border-gray-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto flex flex-col"
-                                    style={{
-                                      top: `${itemDropdownPositions[index].top}px`,
-                                      left: `${itemDropdownPositions[index].left}px`,
-                                      width: `${itemDropdownPositions[index].width}px`,
-                                      minWidth: '200px'
-                                    }}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                  >
+                                  onMouseDown={(e) => e.preventDefault()}
+                                >
                                   <div className="flex-1 overflow-y-auto">
-                                    {getFilteredItems(index).length > 0 ? (
-                                      getFilteredItems(index).map((itemMaster) => {
+                                    {getFilteredItems(itemIndex).length > 0 ? (
+                                      getFilteredItems(itemIndex).map((itemMaster) => {
                                         const itemName = (itemMaster as any).itemName || itemMaster.name;
                                         const sellingPrice = (itemMaster as any).sellingPrice || itemMaster.additionalFields?.rate || 0;
                                         const unit = (itemMaster as any).unitOfMeasure || itemMaster.additionalFields?.unit || '';
                                         return (
-                                      <button
-                                        key={itemMaster._id}
-                                        type="button"
-                                        onMouseDown={(e) => e.preventDefault()} // Prevent blur on input
-                                        onClick={() => handleItemSelect(index, itemMaster)}
-                                        className="w-full text-left px-4 py-2 hover:bg-blue-50 transition-colors"
-                                      >
+                                          <button
+                                            key={itemMaster._id}
+                                            type="button"
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            onClick={() => handleItemSelect(itemIndex, itemMaster)}
+                                            className="w-full text-left px-4 py-2 hover:bg-green-50 transition-colors"
+                                          >
                                             <div className="flex items-center justify-between">
                                               <span>{itemName}</span>
                                               <span className="text-xs text-gray-500 ml-2">
@@ -1005,24 +1237,22 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
                                         );
                                       })
                                     ) : (
-                                      <div className="px-4 py-2 text-gray-500">
-                                        No items found
-                                      </div>
+                                      <div className="px-4 py-2 text-gray-500">No items found</div>
                                     )}
                                   </div>
                                   <div className="border-t-2 border-gray-200 px-4 py-3 bg-gray-50 sticky bottom-0">
                                     <button
                                       type="button"
-                                      onMouseDown={(e) => e.preventDefault()} // Prevent blur on input
+                                      onMouseDown={(e) => e.preventDefault()}
                                       onClick={() => {
                                         setShowItemDropdown(prev => {
                                           const newState = [...prev];
-                                          newState[index] = false;
+                                          newState[itemIndex] = false;
                                           return newState;
                                         });
                                         setShowAddItemModal(true);
                                       }}
-                                      className="w-full text-left text-blue-600 hover:text-blue-800 flex items-center gap-2 font-medium transition-colors"
+                                      className="w-full text-left text-green-600 hover:text-green-800 flex items-center gap-2 font-medium transition-colors"
                                     >
                                       <Plus size={16} />
                                       <span>Add New Item</span>
@@ -1031,76 +1261,200 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
                                 </div>,
                                 document.body
                               )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="number"
-                                min="0.01"
-                                step="0.01"
-                                value={item.quantity}
-                                onChange={(e) => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border-2 border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                onWheel={(e) => e.currentTarget.blur()}
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.rate}
-                                onChange={(e) => handleItemChange(index, 'rate', parseFloat(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border-2 border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                onWheel={(e) => e.currentTarget.blur()}
-                              />
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={item.discount || 0}
-                                  onChange={(e) => handleItemChange(index, 'discount', parseFloat(e.target.value) || 0)}
-                                  className="w-full px-2 py-2 border-2 border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                  onWheel={(e) => e.currentTarget.blur()}
-                                />
-                                <span className="text-gray-600 text-sm">%</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-center font-bold text-gray-900 transition-all duration-300">
-                              ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                            {items.length > 1 && (
+                            </div>
+                          </div>
+                          <div className="col-span-6 md:col-span-2">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Quantity</label>
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) => handleItemChange(itemIndex, 'quantity', parseFloat(e.target.value) || 1)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                              min="1"
+                            />
+                          </div>
+                          <div className="col-span-6 md:col-span-2">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Rate (₹)</label>
+                            <input
+                              type="number"
+                              value={item.rate || ''}
+                              onChange={(e) => handleItemChange(itemIndex, 'rate', parseFloat(e.target.value) || 0)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div className="col-span-6 md:col-span-2">
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Discount (%)</label>
+                            <input
+                              type="number"
+                              value={item.discount || ''}
+                              onChange={(e) => handleItemChange(itemIndex, 'discount', parseFloat(e.target.value) || 0)}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div className="col-span-6 md:col-span-2 flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveRow(itemIndex)}
+                              className="w-full px-4 py-2 bg-red-100 text-red-700 border-2 border-red-300 rounded-lg hover:bg-red-200 hover:border-red-400 transition-colors font-semibold"
+                            >
+                              <X size={18} className="inline mr-1" />
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Processes Section - Expandable */}
+                        <div className="border-t-2 border-gray-300 pt-4 mt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newExpanded = new Set(expandedItems);
+                              if (newExpanded.has(itemIndex)) {
+                                newExpanded.delete(itemIndex);
+                              } else {
+                                newExpanded.add(itemIndex);
+                              }
+                              setExpandedItems(newExpanded);
+                            }}
+                            className="w-full flex items-center justify-between text-sm font-bold text-gray-800 hover:text-green-600 mb-3 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Package size={16} />
+                              Processes ({item.processes?.length || 0})
+                            </span>
+                            {expandedItems.has(itemIndex) ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                          </button>
+
+                          {expandedItems.has(itemIndex) && (
+                            <div className="space-y-3 mt-3">
+                              {(item.processes || []).map((process, processIndex) => (
+                                <div key={processIndex} className="grid grid-cols-12 gap-4 items-center bg-white border border-gray-300 p-4 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                                  <div className="col-span-12 md:col-span-4">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Process Name</label>
+                                    <div className="relative">
+                                      <input
+                                        type="text"
+                                        value={process.processName || ''}
+                                        onChange={(e) => {
+                                          handleProcessChange(itemIndex, processIndex, 'processName', e.target.value);
+                                          const newShow = { ...showProcessDropdown };
+                                          newShow[`${itemIndex}-${processIndex}`] = true;
+                                          setShowProcessDropdown(newShow);
+                                        }}
+                                        onFocus={() => {
+                                          const newShow = { ...showProcessDropdown };
+                                          newShow[`${itemIndex}-${processIndex}`] = true;
+                                          setShowProcessDropdown(newShow);
+                                        }}
+                                        onBlur={() => {
+                                          setTimeout(() => {
+                                            const newShow = { ...showProcessDropdown };
+                                            newShow[`${itemIndex}-${processIndex}`] = false;
+                                            setShowProcessDropdown(newShow);
+                                          }, 200);
+                                        }}
+                                        className="w-full px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                                        placeholder="Type or search process..."
+                                      />
+                                      {showProcessDropdown[`${itemIndex}-${processIndex}`] && (
+                                        <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-300 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                                          {processMasters
+                                            .filter((pm) => 
+                                              !process.processName || 
+                                              (pm.name && pm.name.toLowerCase().includes(process.processName.toLowerCase()))
+                                            )
+                                            .map((pm) => (
+                                              <button
+                                                key={pm._id}
+                                                type="button"
+                                                onClick={() => handleProcessSelect(itemIndex, processIndex, pm)}
+                                                className="w-full text-left px-3 py-2 hover:bg-green-50 border-b border-gray-100 transition-colors text-sm"
+                                              >
+                                                {pm.name || 'Unnamed Process'}
+                                              </button>
+                                            ))}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleAddNewProcess(itemIndex, processIndex)}
+                                            className="w-full text-left px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-semibold transition-colors text-sm flex items-center gap-2 sticky bottom-0"
+                                          >
+                                            <Plus size={16} />
+                                            Add New Process
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="col-span-6 md:col-span-2">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Cost (₹)</label>
+                                    <input
+                                      type="number"
+                                      value={process.processCost || ''}
+                                      onChange={(e) => handleProcessChange(itemIndex, processIndex, 'processCost', parseFloat(e.target.value) || 0)}
+                                      className="w-full px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right text-sm"
+                                      min="0"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                    />
+                                  </div>
+                                  <div className="col-span-6 md:col-span-2">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity</label>
+                                    <input
+                                      type="number"
+                                      value={process.quantity}
+                                      onChange={(e) => handleProcessChange(itemIndex, processIndex, 'quantity', parseInt(e.target.value) || 1)}
+                                      className="w-full px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right text-sm"
+                                      min="1"
+                                    />
+                                  </div>
+                                  <div className="col-span-12 md:col-span-2">
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1">Total</label>
+                                    <input
+                                      type="text"
+                                      value={`₹${process.processTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                      readOnly
+                                      className="w-full px-3 py-1 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed text-right text-sm font-semibold"
+                                    />
+                                  </div>
+                                  <div className="col-span-12 md:col-span-2 flex items-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveProcess(itemIndex, processIndex)}
+                                      className="w-full px-3 py-1 bg-red-50 text-red-600 border border-red-300 rounded-lg hover:bg-red-100 hover:border-red-400 transition-colors text-sm font-semibold"
+                                    >
+                                      <X size={16} className="inline mr-1" />
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
                               <button
                                 type="button"
-                                onClick={() => handleRemoveRow(index)}
-                                className="text-red-600 hover:text-red-800"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleAddProcess(itemIndex);
+                                }}
+                                className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
                               >
-                                <Trash2 size={18} />
+                                <Plus size={18} />
+                                Add Process
                               </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
-                {/* Add New Row Button */}
-                <div className="flex justify-start">
-                  <button
-                    type="button"
-                    onClick={handleAddRow}
-                    className="px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2 text-sm transition-all duration-200"
-                  >
-                    <Plus size={16} />
-                    <span>Add New Row</span>
-                  </button>
-                </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
 
               {/* Calculation Inputs Grid */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
@@ -1343,6 +1697,17 @@ export default function QuotationForm({ onClose, onSuccess, quotationToEdit }: Q
             </div>
           </div>
         </div>
+      )}
+
+      {/* Process Form Modal */}
+      {showProcessForm && (
+        <ProcessForm
+          onClose={() => {
+            setShowProcessForm(false);
+            setProcessFormContext(null);
+          }}
+          onSuccess={handleProcessFormSuccess}
+        />
       )}
     </div>
   );

@@ -621,6 +621,19 @@ export const createQuotation = async (req, res, next) => {
       });
     }
 
+    // Clean up item processes - remove empty processId to prevent ObjectId cast error
+    if (items && Array.isArray(items)) {
+      items.forEach(item => {
+        if (item.processes && Array.isArray(item.processes)) {
+          item.processes.forEach(process => {
+            if (process.processId === '' || process.processId === null || process.processId === undefined) {
+              delete process.processId;
+            }
+          });
+        }
+      });
+    }
+
     // Normalize processes - support both new array format and legacy single process
     let normalizedProcesses = [];
     if (processes && Array.isArray(processes) && processes.length > 0) {
@@ -921,6 +934,7 @@ export const updateQuotation = async (req, res, next) => {
     console.log('📝 [UPDATE] Quotation found:', quotation.quotationNumber);
 
     const {
+      items,
       processes,
       process,
       rate,
@@ -929,6 +943,19 @@ export const updateQuotation = async (req, res, next) => {
       transportCost,
       quantity = 1
     } = req.body;
+
+    // Clean up item processes - remove empty processId to prevent ObjectId cast error
+    if (items && Array.isArray(items)) {
+      items.forEach(item => {
+        if (item.processes && Array.isArray(item.processes)) {
+          item.processes.forEach(process => {
+            if (process.processId === '' || process.processId === null || process.processId === undefined) {
+              delete process.processId;
+            }
+          });
+        }
+      });
+    }
 
     // Normalize processes - support both new array format and legacy single process
     let normalizedProcesses = [];

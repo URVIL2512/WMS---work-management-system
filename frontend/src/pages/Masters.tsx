@@ -15,6 +15,7 @@ interface MasterData {
     contact?: string;
     email?: string;
     address?: string;
+    cost?: number;
   };
 }
 
@@ -44,6 +45,7 @@ export default function Masters() {
     email: '',
     address: '',
     rate: 0,
+    cost: 0,
     unit: 'PCS',
     description: ''
   });
@@ -204,6 +206,10 @@ export default function Masters() {
       if (activeTab === 'vendor') {
         if (formData.address) additionalFields.address = formData.address;
       }
+      
+      if (activeTab === 'process') {
+        if (formData.cost) additionalFields.cost = formData.cost;
+      }
 
       const response = await api.post(`/masters/${type}`, {
         name: formData.name,
@@ -212,7 +218,7 @@ export default function Masters() {
 
       if (response.data.success) {
         setShowModal(false);
-        setFormData({ name: '', contact: '', email: '', address: '', rate: 0, unit: 'PCS', description: '' });
+        setFormData({ name: '', contact: '', email: '', address: '', rate: 0, cost: 0, unit: 'PCS', description: '' });
         await fetchMasters();
       }
     } catch (err: any) {
@@ -458,6 +464,9 @@ export default function Masters() {
                   ) : (
                     <>
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Name</th>
+                      {activeTab === 'process' && (
+                        <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Cost (₹)</th>
+                      )}
                       {activeTab !== 'process' && (
                         <>
                           <th className="text-left py-3 px-4 text-sm font-semibold text-gray-700">Contact</th>
@@ -475,13 +484,13 @@ export default function Masters() {
               <tbody>
                 {loading && getData().length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'customer' ? 9 : activeTab === 'item' ? 10 : activeTab === 'process' ? 2 : activeTab === 'transport' ? 4 : 5} className="py-8 text-center text-gray-500">
+                    <td colSpan={activeTab === 'customer' ? 9 : activeTab === 'item' ? 10 : activeTab === 'process' ? 3 : activeTab === 'transport' ? 4 : 5} className="py-8 text-center text-gray-500">
                       Loading...
                     </td>
                   </tr>
                 ) : getData().length === 0 ? (
                   <tr>
-                    <td colSpan={activeTab === 'customer' ? 9 : activeTab === 'item' ? 10 : activeTab === 'process' ? 2 : activeTab === 'transport' ? 4 : 5} className="py-8 text-center text-gray-500">
+                    <td colSpan={activeTab === 'customer' ? 9 : activeTab === 'item' ? 10 : activeTab === 'process' ? 3 : activeTab === 'transport' ? 4 : 5} className="py-8 text-center text-gray-500">
                       No {activeTab} found. Add your first one!
                     </td>
                   </tr>
@@ -638,6 +647,11 @@ export default function Masters() {
                       ) : (
                         <>
                           <td className="py-3 px-4 text-sm font-medium text-gray-900">{item.name}</td>
+                          {activeTab === 'process' && (
+                            <td className="py-3 px-4 text-sm text-gray-700">
+                              {item.additionalFields?.cost ? `₹${item.additionalFields.cost.toFixed(2)}` : '-'}
+                            </td>
+                          )}
                           {activeTab !== 'process' && (
                             <>
                               <td className="py-3 px-4 text-sm text-gray-700">{item.additionalFields?.contact || '-'}</td>
@@ -780,7 +794,21 @@ export default function Masters() {
                     />
                   </div>
                 </>
-              ) : activeTab !== 'process' && (
+              ) : activeTab === 'process' ? (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.cost}
+                    onChange={(e) => setFormData({ ...formData, cost: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    placeholder="Enter process cost"
+                    onWheel={(e) => e.currentTarget.blur()}
+                  />
+                </div>
+              ) : (
                 <>
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">Contact</label>

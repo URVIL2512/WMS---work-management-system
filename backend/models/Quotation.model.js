@@ -104,6 +104,11 @@ const quotationSchema = new mongoose.Schema({
   },
   // Items array for multiple items
   items: [{
+    itemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Master',
+      required: false // Item Master reference
+    },
     itemName: {
       type: String,
       trim: true
@@ -121,6 +126,38 @@ const quotationSchema = new mongoose.Schema({
       type: String,
       trim: true
     },
+    // Item-wise processes (one-to-many relationship)
+    processes: [{
+      processId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Master',
+        required: false // Process Master reference
+      },
+      processName: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      processCost: {
+        type: Number,
+        required: true,
+        min: 0
+      },
+      processDescription: {
+        type: String,
+        trim: true
+      },
+      quantity: {
+        type: Number,
+        default: 1,
+        min: 1
+      },
+      processTotal: {
+        type: Number,
+        required: true,
+        min: 0
+      }
+    }],
     // Legacy fields for backward compatibility
     itemCode: {
       type: String,
@@ -155,6 +192,12 @@ const quotationSchema = new mongoose.Schema({
     },
     lineTotal: {
       type: Number,
+      min: 0
+    },
+    // Item total (sum of all process totals)
+    itemTotal: {
+      type: Number,
+      default: 0,
       min: 0
     }
   }],

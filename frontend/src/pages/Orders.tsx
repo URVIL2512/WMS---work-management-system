@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Plus, Eye, Edit, Trash2, MoreVertical, X, Filter, RotateCcw, CheckCircle, Package, Truck, FileText, AlertCircle, XCircle, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2, MoreVertical, X, Filter, RotateCcw, CheckCircle, Package, Truck, FileText, AlertCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../api/axios';
 import ConfirmationModal from '../components/ConfirmationModal';
+import ProcessForm from '../components/ProcessForm';
 import CustomerForm from '../components/CustomerForm';
-import ItemForm from '../components/ItemForm';
 
 // Date formatting utility - DD-MM-YYYY format
 const formatDate = (date: string | Date): string => {
@@ -62,36 +61,36 @@ export default function Orders() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
-  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
   const customerInputRef = useRef<HTMLInputElement>(null);
 
   // Item Master state
   const [itemMasters, setItemMasters] = useState<any[]>([]);
-  const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [itemSearch, setItemSearch] = useState<string[]>([]);
   const [showItemDropdown, setShowItemDropdown] = useState<boolean[]>([]);
-  const [itemDropdownPositions, setItemDropdownPositions] = useState<{ [key: number]: { top: number; left: number; width: number } }>({});
   const itemDropdownRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const itemInputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
 
   // Process Master state
   const [processMasters, setProcessMasters] = useState<any[]>([]);
-  const [processSearch, setProcessSearch] = useState<{ [key: string]: string }>({});
   const [showProcessDropdown, setShowProcessDropdown] = useState<{ [key: string]: boolean }>({});
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
+  const lastProcessAddTime = useRef<{ [key: number]: number }>({});
+  const [showProcessForm, setShowProcessForm] = useState(false);
+  const [processFormContext, setProcessFormContext] = useState<{ itemIndex: number; processIndex: number } | null>(null);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
 
   // Order items structure: items[] with processes[]
   interface OrderItem {
     itemId: string;
     itemName: string;
     quantity: number;
-    rate: number;
+    rate: number | null;
     itemTotal: number;
     processes: Array<{
       processId: string;
       processName: string;
-      rate: number;
+      rate: number | null;
       quantity: number;
       amount: number;
     }>;
@@ -99,7 +98,31 @@ export default function Orders() {
 
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
 
-  const [formData, setFormData] = useState({
+  interface LegacyProcess {
+    processName: string;
+    rate: string | number;
+    quantity: number;
+  }
+
+  const [formData, setFormData] = useState<{
+    quotationId: string;
+    customerName: string;
+    contactNumber: string;
+    email: string;
+    itemName: string;
+    itemDescription: string;
+    quantity: number;
+    processes: LegacyProcess[];
+    gstPercent: number;
+    packagingCost: number;
+    transportCost: number;
+    totalAmount: number;
+    paymentTerms: string;
+    deliveryDate: string;
+    deliveryAddress: string;
+    expectedDispatchDate: string;
+    remarks: string;
+  }>({
     quotationId: '',
     // Legacy fields for backward compatibility
     customerName: '',
@@ -108,7 +131,7 @@ export default function Orders() {
     itemName: '',
     itemDescription: '',
     quantity: 1,
-    processes: [{ processName: '', rate: '', quantity: 1 }],
+    processes: [],
     gstPercent: 0,
     packagingCost: 0,
     transportCost: 0,
@@ -183,6 +206,64 @@ export default function Orders() {
     }
   };
 
+  const handleAddNewProcess = (itemIndex: number, processIndex: number) => {
+    setProcessFormContext({ itemIndex, processIndex });
+    setShowProcessForm(true);
+    // Close the dropdown
+    setShowProcessDropdown(prev => ({ ...prev, [`${itemIndex}-${processIndex}`]: false }));
+  };
+
+  const handleProcessFormSuccess = async (process: { _id: string; name: string; cost?: number }) => {
+    // Refresh process masters list
+    await fetchProcessMasters();
+    
+    // Auto-select the newly created process
+    if (processFormContext) {
+      const { itemIndex, processIndex } = processFormContext;
+      setOrderItems(prev => {
+        const updated = [...prev];
+        updated[itemIndex].processes[processIndex] = {
+          ...updated[itemIndex].processes[processIndex],
+          processId: process._id,
+          processName: process.name,
+          rate: process.cost || 0
+        };
+        
+        // STEP 1: Calculate process amount (Process Rate × Process Quantity)
+        const processObj = updated[itemIndex].processes[processIndex];
+        processObj.amount = (processObj.rate || 0) * (processObj.quantity || 1);
+        
+        // STEP 2: Calculate item base amount (Item Rate × Item Quantity)
+        const itemBaseAmount = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+        
+        // STEP 3: Calculate total process amount for this item
+        const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+        
+        // STEP 4: Item Total = Item Base Amount + Total Process Amount
+        updated[itemIndex].itemTotal = itemBaseAmount + totalProcessAmount;
+        
+        return updated;
+      });
+    }
+    
+    setShowProcessForm(false);
+    setProcessFormContext(null);
+  };
+
+  const handleCustomerFormSuccess = async (customer?: any) => {
+    // Refresh customers list
+    await fetchCustomers();
+    
+    // Auto-select the newly created customer if provided
+    if (customer) {
+      setSelectedCustomer(customer);
+      setCustomerSearch(customer.customerName || customer.name || '');
+    }
+    
+    setShowAddCustomerModal(false);
+    setShowCustomerDropdown(false); // Close dropdown since customer is selected
+  };
+
   // Refresh approved quotations and calculate next SO number when modal opens
   useEffect(() => {
     if (showModal) {
@@ -211,6 +292,29 @@ export default function Orders() {
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showCustomerDropdown]);
+
+  // Handle customer modal: disable body scroll and ESC key
+  useEffect(() => {
+    if (showAddCustomerModal) {
+      // Disable body scroll
+      document.body.style.overflow = 'hidden';
+
+      // Handle ESC key
+      const handleEscKey = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          setShowAddCustomerModal(false);
+        }
+      };
+
+      document.addEventListener('keydown', handleEscKey);
+
+      return () => {
+        // Re-enable body scroll
+        document.body.style.overflow = 'unset';
+        document.removeEventListener('keydown', handleEscKey);
+      };
+    }
+  }, [showAddCustomerModal]);
 
   // Close item dropdowns on outside click
   useEffect(() => {
@@ -286,14 +390,6 @@ export default function Orders() {
     }));
   };
 
-  const handleCustomerFormSuccess = async (newCustomer?: any) => {
-    if (newCustomer) {
-      await fetchCustomers(); // Refresh customer list
-      handleCustomerSelect(newCustomer); // Auto-select newly created customer
-    }
-    setShowAddCustomerModal(false);
-  };
-
   // Item handlers
   const handleAddItem = () => {
     setOrderItems(prev => [...prev, {
@@ -330,13 +426,22 @@ export default function Orders() {
   const handleItemSelect = (itemIndex: number, item: any) => {
     setOrderItems(prev => {
       const updated = [...prev];
+      const quantity = updated[itemIndex]?.quantity || 1;
+      const rate = item.sellingPrice || 0;
+      const processes = updated[itemIndex]?.processes || [];
+      
+      // Calculate item total immediately
+      const itemBaseAmount = rate * quantity;
+      const totalProcessAmount = processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const itemTotal = itemBaseAmount + totalProcessAmount;
+      
       updated[itemIndex] = {
         itemId: item._id || item.itemId || '',
         itemName: item.itemName || item.name || '',
-        quantity: updated[itemIndex]?.quantity || 1,
-        rate: item.sellingPrice || 0,
-        itemTotal: 0,
-        processes: updated[itemIndex]?.processes || []
+        quantity,
+        rate,
+        itemTotal,
+        processes
       };
       return updated;
     });
@@ -355,32 +460,39 @@ export default function Orders() {
     setExpandedItems(prev => new Set([...prev, itemIndex]));
   };
 
-  const handleItemFormSuccess = async (newItem?: any) => {
-    if (newItem) {
-      await fetchItemMasters(); // Refresh item list
-      // Auto-select newly created item in the last added item row
-      if (orderItems.length > 0) {
-        const lastIndex = orderItems.length - 1;
-        handleItemSelect(lastIndex, newItem);
-      }
-    }
-    setShowAddItemModal(false);
-  };
-
   // Process handlers
   const handleAddProcess = (itemIndex: number) => {
+    // Debounce: Prevent adding process if called within 300ms
+    const now = Date.now();
+    const lastTime = lastProcessAddTime.current[itemIndex] || 0;
+    
+    if (now - lastTime < 300) {
+      console.log('⚠️ Debounced: Process add called too quickly, ignoring');
+      return;
+    }
+    
+    lastProcessAddTime.current[itemIndex] = now;
+    
     setOrderItems(prev => {
       const updated = [...prev];
-      if (!updated[itemIndex].processes) {
-        updated[itemIndex].processes = [];
-      }
-      updated[itemIndex].processes.push({
+      const currentProcesses = updated[itemIndex].processes || [];
+      
+      // Create new process object with explicit type
+      const newProcess: OrderItem['processes'][0] = {
         processId: '', // Will be filtered out if empty before submission
         processName: '',
-        rate: 0,
+        rate: null,
         quantity: 1,
         amount: 0
-      });
+      };
+      
+      // Properly create new item object with new processes array (immutable update)
+      updated[itemIndex] = {
+        ...updated[itemIndex],
+        processes: [...currentProcesses, newProcess]
+      };
+      
+      console.log(`✅ Added process to item ${itemIndex}. Total processes: ${updated[itemIndex].processes.length}`);
       return updated;
     });
   };
@@ -389,8 +501,12 @@ export default function Orders() {
     setOrderItems(prev => {
       const updated = [...prev];
       updated[itemIndex].processes = updated[itemIndex].processes.filter((_, i) => i !== processIndex);
-      // Recalculate item total
-      updated[itemIndex].itemTotal = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // Recalculate item total properly
+      const itemBaseAmount = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      updated[itemIndex].itemTotal = itemBaseAmount + totalProcessAmount;
+      
       return updated;
     });
   };
@@ -399,25 +515,24 @@ export default function Orders() {
     setOrderItems(prev => {
       const updated = [...prev];
       const selectedProcess = updated[itemIndex].processes[processIndex];
+      // Auto-fill cost/rate from master data
+      const processRate = process.additionalFields?.cost || selectedProcess?.rate || 0;
+      const processQuantity = selectedProcess?.quantity || 1;
+      
       updated[itemIndex].processes[processIndex] = {
         processId: process._id || '',
         processName: process.name || '',
-        rate: selectedProcess?.rate || process.additionalFields?.rate || 0,
-        quantity: selectedProcess?.quantity || 1,
-        amount: (selectedProcess?.rate || process.additionalFields?.rate || 0) * (selectedProcess?.quantity || 1)
+        rate: processRate,
+        quantity: processQuantity,
+        amount: processRate * processQuantity
       };
       // Recalculate item total
       updated[itemIndex].itemTotal = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
       return updated;
     });
-    // Close process dropdown and clear search
+    // Close process dropdown
     const processKey = `${itemIndex}-${processIndex}`;
     setShowProcessDropdown(prev => ({ ...prev, [processKey]: false }));
-    setProcessSearch(prev => {
-      const newSearch = { ...prev };
-      delete newSearch[processKey]; // Clear the search term
-      return newSearch;
-    });
   };
 
   const handleProcessChange = (itemIndex: number, processIndex: number, field: string, value: any) => {
@@ -427,19 +542,34 @@ export default function Orders() {
         ...updated[itemIndex].processes[processIndex],
         [field]: value
       };
-      // Recalculate process amount
+      
+      // STEP 1: Calculate process amount (Process Rate × Process Quantity)
       const process = updated[itemIndex].processes[processIndex];
       process.amount = (process.rate || 0) * (process.quantity || 1);
-      // Recalculate item total
-      updated[itemIndex].itemTotal = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // STEP 2: Calculate item base amount (Item Rate × Item Quantity)
+      const itemBaseAmount = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      
+      // STEP 3: Calculate total process amount for this item
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      
+      // STEP 4: Item Total = Item Base Amount + Total Process Amount
+      updated[itemIndex].itemTotal = itemBaseAmount + totalProcessAmount;
+      
       return updated;
     });
   };
 
-  const handleItemQuantityChange = (itemIndex: number, quantity: number) => {
+  const handleItemChange = (itemIndex: number, field: 'rate' | 'quantity', value: number) => {
     setOrderItems(prev => {
       const updated = [...prev];
-      updated[itemIndex].quantity = quantity;
+      updated[itemIndex][field] = value;
+      
+      // Recalculate item total when rate or quantity changes
+      const itemBaseAmount = (updated[itemIndex].rate || 0) * (updated[itemIndex].quantity || 1);
+      const totalProcessAmount = updated[itemIndex].processes.reduce((sum, p) => sum + (p.amount || 0), 0);
+      updated[itemIndex].itemTotal = itemBaseAmount + totalProcessAmount;
+      
       return updated;
     });
   };
@@ -481,7 +611,9 @@ export default function Orders() {
         setFormData(prev => ({
           ...prev,
           quotationId: quotationId,
-          deliveryDate: quotation.deliveryDate ? new Date(quotation.deliveryDate).toISOString().split('T')[0] : prev.deliveryDate,
+          deliveryDate: quotation.deliveryDate
+            ? new Date(quotation.deliveryDate).toISOString().split('T')[0]
+            : prev.deliveryDate,
           deliveryAddress: quotation.deliveryAddress || prev.deliveryAddress,
           // Clear manual entry fields when quotation is selected
           customerName: '',
@@ -490,7 +622,7 @@ export default function Orders() {
           itemName: '',
           itemDescription: '',
           quantity: 1,
-          processes: [{ processName: '', rate: '', quantity: 1 }],
+          processes: [{ processName: '', rate: '', quantity: 1 }] as { processName: string; rate: string; quantity: number; }[], // Added type assertion for compatibility
           gstPercent: 0,
           packagingCost: 0,
           transportCost: 0,
@@ -499,68 +631,9 @@ export default function Orders() {
         }));
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch quotation details');
+      setError(err?.response?.data?.message || 'Failed to fetch quotation details');
       console.error('Error fetching quotation:', err);
     }
-  };
-
-  const handleLegacyAddProcess = () => {
-    setFormData(prev => ({
-      ...prev,
-      processes: [...prev.processes, { processName: '', rate: '', quantity: 1 }]
-    }));
-  };
-
-  const handleLegacyRemoveProcess = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      processes: prev.processes.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleLegacyProcessChange = (index: number, field: string, value: string | number) => {
-    setFormData(prev => {
-      const updatedProcesses = [...prev.processes];
-      updatedProcesses[index] = {
-        ...updatedProcesses[index],
-        [field]: value
-      };
-      
-      // Calculate total amount
-      const processTotal = updatedProcesses.reduce((sum, p) => {
-        const rate = parseFloat(p.rate.toString()) || 0;
-        const qty = parseFloat(p.quantity?.toString() || '1') || 1;
-        return sum + (rate * qty);
-      }, 0);
-      const gstAmount = processTotal * ((prev.gstPercent || 0) / 100);
-      const totalAmount = processTotal + gstAmount + (prev.packagingCost || 0) + (prev.transportCost || 0);
-      
-      return {
-        ...prev,
-        processes: updatedProcesses,
-        totalAmount: totalAmount
-      };
-    });
-  };
-
-  const handleCostChange = (field: string, value: number) => {
-    setFormData(prev => {
-      const processTotal = prev.processes.reduce((sum, p) => {
-        const rate = parseFloat(p.rate.toString()) || 0;
-        const qty = parseFloat(p.quantity?.toString() || '1') || 1;
-        return sum + (rate * qty);
-      }, 0);
-      const gstAmount = processTotal * ((prev.gstPercent || 0) / 100);
-      const totalAmount = processTotal + gstAmount + 
-        (field === 'packagingCost' ? value : (prev.packagingCost || 0)) + 
-        (field === 'transportCost' ? value : (prev.transportCost || 0));
-      
-      return {
-        ...prev,
-        [field]: value,
-        totalAmount: totalAmount
-      };
-    });
   };
 
   const fetchOrders = async (overrides?: { status?: string; startDate?: string; endDate?: string; search?: string }) => {
@@ -687,7 +760,12 @@ export default function Orders() {
               return;
             }
 
-            if (process.rate === undefined || process.rate < 0) {
+            if (process.rate === undefined || process.rate === null) {
+              setError(`Item ${i + 1}, Process ${j + 1}: Rate is required`);
+              return;
+            }
+            
+            if (process.rate < 0) {
               setError(`Item ${i + 1}, Process ${j + 1}: Rate must be >= 0`);
               return;
             }
@@ -1450,26 +1528,34 @@ export default function Orders() {
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           <form onSubmit={showModal ? handleSubmit : handleUpdateSubmit} className="p-6">
           {success && (
-            <div className="mb-2 bg-green-50 border-2 border-green-300 text-green-700 px-3 py-2 rounded-lg flex items-center justify-between">
-              <span>{success}</span>
+            <div className="mb-4 bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 text-green-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
+                <span className="font-semibold text-base">{success}</span>
+              </div>
               <button
+                type="button"
                 onClick={() => setSuccess('')}
-                className="text-green-700 hover:text-green-900 ml-2 p-1 hover:bg-green-100 rounded transition-colors"
+                className="text-green-600 hover:text-green-800 hover:bg-green-200 p-2 rounded-full transition-all duration-200 ml-4"
                 aria-label="Close success message"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
           )}
           {error && (
-            <div className="mb-2 bg-red-50 border-2 border-red-300 text-red-700 px-3 py-2 rounded-lg flex items-center justify-between">
-              <span>{error}</span>
+            <div className="mb-4 bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 text-red-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                <AlertCircle size={24} className="text-red-600 flex-shrink-0" />
+                <span className="font-semibold text-base">{error}</span>
+              </div>
               <button
+                type="button"
                 onClick={() => setError('')}
-                className="text-red-700 hover:text-red-900 ml-2 p-1 hover:bg-red-100 rounded transition-colors"
+                className="text-red-600 hover:text-red-800 hover:bg-red-200 p-2 rounded-full transition-all duration-200 ml-4"
                 aria-label="Close error message"
               >
-                <X size={16} />
+                <X size={20} />
               </button>
             </div>
           )}
@@ -1752,39 +1838,39 @@ export default function Orders() {
                                   )}
                                 </button>
                               ))}
-                              <div className="border-t border-gray-200 p-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setShowCustomerDropdown(false);
-                                    setShowAddCustomerModal(true);
-                                  }}
-                                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold"
-                                >
-                                  <Plus size={18} />
-                                  Add New Customer
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="p-4 text-center text-gray-500">
-                              <div className="mb-2">No customers found</div>
+                              
+                              {/* Add New Customer Button */}
                               <button
                                 type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setShowCustomerDropdown(false);
+                                onClick={() => {
                                   setShowAddCustomerModal(true);
+                                  setShowCustomerDropdown(false);
                                 }}
-                                className="flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold mx-auto"
+                                className="w-full px-4 py-3 text-left font-medium text-green-600 hover:bg-green-50 flex items-center gap-2 border-t-2 border-green-200 transition-colors"
                               >
                                 <Plus size={18} />
-                                Add New Customer
+                                <span>Add New Customer</span>
                               </button>
-                            </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="p-4 text-center text-gray-500">
+                                No customers found
+                              </div>
+                              
+                              {/* Add New Customer Button - also show when no results */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowAddCustomerModal(true);
+                                  setShowCustomerDropdown(false);
+                                }}
+                                className="w-full px-4 py-3 text-left font-medium text-green-600 hover:bg-green-50 flex items-center gap-2 border-t-2 border-green-200 transition-colors"
+                              >
+                                <Plus size={18} />
+                                <span>Add New Customer</span>
+                              </button>
+                            </>
                           )}
                         </div>
                       )}
@@ -1881,23 +1967,6 @@ export default function Orders() {
                                           </div>
                                         </button>
                                       ))}
-                                    <div className="border-t border-gray-200 p-2">
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          const newShow = [...showItemDropdown];
-                                          newShow[itemIndex] = false;
-                                          setShowItemDropdown(newShow);
-                                          setShowAddItemModal(true);
-                                        }}
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold"
-                                      >
-                                        <Plus size={18} />
-                                        Add New Item
-                                      </button>
-                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -1906,11 +1975,12 @@ export default function Orders() {
                               <label className="block text-sm font-semibold text-gray-700 mb-2">Rate (₹)</label>
                               <input
                                 type="number"
-                                value={item.rate}
-                                onChange={(e) => handleItemQuantityChange(itemIndex, parseFloat(e.target.value) || 0)}
+                                value={item.rate || ''}
+                                onChange={(e) => handleItemChange(itemIndex, 'rate', parseFloat(e.target.value) || 0)}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
                                 min="0"
                                 step="0.01"
+                                placeholder="0.00"
                               />
                             </div>
                             <div className="col-span-6 md:col-span-2">
@@ -1918,10 +1988,12 @@ export default function Orders() {
                               <input
                                 type="number"
                                 value={item.quantity}
-                                onChange={(e) => handleItemQuantityChange(itemIndex, parseInt(e.target.value) || 1)}
+                                onChange={(e) => handleItemChange(itemIndex, 'quantity', parseInt(e.target.value) || 1)}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
                                 min="1"
                               />
+                            </div>
+                            <div className="col-span-6 md:col-span-2">
                               <label className="block text-sm font-semibold text-gray-700 mb-2">Item Total</label>
                               <input
                                 type="text"
@@ -1930,7 +2002,7 @@ export default function Orders() {
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed text-right font-semibold"
                               />
                             </div>
-                            <div className="col-span-12 md:col-span-2 flex items-end">
+                            <div className="col-span-6 md:col-span-2 flex items-end">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveItem(itemIndex)}
@@ -2016,6 +2088,14 @@ export default function Orders() {
                                                   {pm.name || 'Unnamed Process'}
                                                 </button>
                                               ))}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleAddNewProcess(itemIndex, processIndex)}
+                                              className="w-full text-left px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-semibold transition-colors text-sm flex items-center gap-2 sticky bottom-0"
+                                            >
+                                              <Plus size={16} />
+                                              Add New Process
+                                            </button>
                                           </div>
                                         )}
                                       </div>
@@ -2024,11 +2104,12 @@ export default function Orders() {
                                       <label className="block text-xs font-semibold text-gray-700 mb-1">Rate (₹)</label>
                                       <input
                                         type="number"
-                                        value={process.rate}
+                                        value={process.rate || ''}
                                         onChange={(e) => handleProcessChange(itemIndex, processIndex, 'rate', parseFloat(e.target.value) || 0)}
                                         className="w-full px-3 py-1 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-right text-sm"
                                         min="0"
                                         step="0.01"
+                                        placeholder="0.00"
                                       />
                                     </div>
                                     <div className="col-span-6 md:col-span-2">
@@ -2064,8 +2145,16 @@ export default function Orders() {
                                 ))}
                                 <button
                                   type="button"
-                                  onClick={() => handleAddProcess(itemIndex)}
-                                  className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleAddProcess(itemIndex);
+                                  }}
+                                  className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg active:scale-95"
                                 >
                                   <Plus size={18} />
                                   Add Process
@@ -2108,7 +2197,7 @@ export default function Orders() {
                       <input
                         type="number"
                         value={formData.packagingCost}
-                        onChange={(e) => handleCostChange('packagingCost', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => setFormData(prev => ({ ...prev, packagingCost: parseFloat(e.target.value) || 0 }))}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                         min="0"
                         step="0.01"
@@ -2119,7 +2208,7 @@ export default function Orders() {
                       <input
                         type="number"
                         value={formData.transportCost}
-                        onChange={(e) => handleCostChange('transportCost', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => setFormData(prev => ({ ...prev, transportCost: parseFloat(e.target.value) || 0 }))}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                         min="0"
                         step="0.01"
@@ -2327,28 +2416,36 @@ export default function Orders() {
 
       {/* Success Message */}
       {success && (
-        <div className="bg-green-50 border-2 border-green-300 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
-          <span>{success}</span>
+        <div className="bg-gradient-to-r from-green-50 to-green-100 border-l-4 border-green-500 text-green-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in mb-6">
+          <div className="flex items-center gap-3">
+            <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
+            <span className="font-semibold text-base">{success}</span>
+          </div>
           <button
+            type="button"
             onClick={() => setSuccess('')}
-            className="text-green-700 hover:text-green-900 ml-4 p-1 hover:bg-green-100 rounded transition-colors"
+            className="text-green-600 hover:text-green-800 hover:bg-green-200 p-2 rounded-full transition-all duration-200 ml-4"
             aria-label="Close success message"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 border-2 border-red-300 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
-          <span>{error}</span>
+        <div className="bg-gradient-to-r from-red-50 to-red-100 border-l-4 border-red-500 text-red-800 px-6 py-4 rounded-lg shadow-lg flex items-center justify-between animate-fade-in mb-6">
+          <div className="flex items-center gap-3">
+            <AlertCircle size={24} className="text-red-600 flex-shrink-0" />
+            <span className="font-semibold text-base">{error}</span>
+          </div>
           <button
+            type="button"
             onClick={() => setError('')}
-            className="text-red-700 hover:text-red-900 ml-4 p-1 hover:bg-red-100 rounded transition-colors"
+            className="text-red-600 hover:text-red-800 hover:bg-red-200 p-2 rounded-full transition-all duration-200 ml-4"
             aria-label="Close error message"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
       )}
@@ -2806,6 +2903,43 @@ export default function Orders() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Process Form Modal */}
+      {showProcessForm && (
+        <ProcessForm
+          onClose={() => {
+            setShowProcessForm(false);
+            setProcessFormContext(null);
+          }}
+          onSuccess={handleProcessFormSuccess}
+        />
+      )}
+
+      {/* Customer Form Modal */}
+      {showAddCustomerModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4 animate-fadeIn"
+          onClick={(e) => {
+            // Close on backdrop click
+            if (e.target === e.currentTarget) {
+              setShowAddCustomerModal(false);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-modal-title"
+        >
+          <div 
+            className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CustomerForm
+              onClose={() => setShowAddCustomerModal(false)}
+              onSuccess={handleCustomerFormSuccess}
+            />
           </div>
         </div>
       )}
